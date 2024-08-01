@@ -1,4 +1,8 @@
-/* For each of these colors create a css selector and set the background color as the color */
+/* 
+These are the possible colors to fonts and backgroud for labels in Gmail.
+
+I created this file in css due to CSS native colorpicker in VSCode, showing the color in the editor.
+ */
 #000000 { background-color: #000000; }
 #434343 { background-color: #434343; }
 #666666 { background-color: #666666; }
