@@ -1,7 +1,7 @@
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
 
 import os
@@ -12,7 +12,7 @@ env = dotenv_values('.env')
 SCOPES = ["https://mail.google.com/"]
 
 
-def refresh_credentials():
+def refresh_credentials() -> Resource:
     creds = None
     # The file token.json stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
