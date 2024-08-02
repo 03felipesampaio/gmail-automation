@@ -1,0 +1,38 @@
+/* 
+These are the possible colors to fonts and backgroud for labels in Gmail.
+
+I created this file in css due to CSS native colorpicker in VSCode, showing the color in the editor.
+ */
+#000000 { background-color: #000000; }
+#434343 { background-color: #434343; }
+#666666 { background-color: #666666; }
+#999999 { background-color: #999999; }
+#cccccc { background-color: #cccccc; }
+#efefef { background-color: #efefef; }
+#f3f3f3 { background-color: #f3f3f3; }
+#ffffff { background-color: #ffffff; }
+#fb4c2f { background-color: #fb4c2f; }
+#ffad47 { background-color: #ffad47; }
+#fad165 { background-color: #fad165; }
+#16a766 { background-color: #16a766; }
+#43d692 { background-color: #43d692; }
+#4a86e8 { background-color: #4a86e8; }
+#a479e2 { background-color: #a479e2; }
+#f691b3 { background-color: #f691b3; }
+#f6c5be { background-color: #f6c5be; }
+#ffe6c7 { background-color: #ffe6c7; }
+#fef1d1 { background-color: #fef1d1; }
+#b9e4d0 { background-color: #b9e4d0; }
+#c6f3de { background-color: #c6f3de; }
+#c9daf8 { background-color: #c9daf8; }
+#e4d7f5 { background-color: #e4d7f5; }
+#fcdee8 { background-color: #fcdee8; }
+#efa093 { background-color: #efa093; }
+#ffd6a2 { background-color: #ffd6a2; }
+#fce8b3 { background-color: #fce8b3; }
+#89d3b2 { background-color: #89d3b2; }
+#a0eac9 { background-color: #a0eac9; }
+#a4c2f4 { background-color: #a4c2f4; }
+#d0bcf1 { background-color: #d0bcf1; }
+#fbc8d9 { background-color: #fbc8d9; }
+#e66550 { background-color: #e66550; }
