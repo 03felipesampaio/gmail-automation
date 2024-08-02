@@ -5,14 +5,12 @@ from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
 
 import os
-from dotenv import dotenv_values
 
-env = dotenv_values('.env')
 
 SCOPES = ["https://mail.google.com/"]
 
 
-def refresh_credentials() -> Resource:
+def refresh_credentials(credential_path: str) -> Resource:
     creds = None
     # The file token.json stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
@@ -24,9 +22,7 @@ def refresh_credentials() -> Resource:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                env['GMAIL_CREDENTIALS_PATH'], SCOPES
-            )
+            flow = InstalledAppFlow.from_client_secrets_file(credential_path, SCOPES)
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
         with open("token.json", "w") as token:
@@ -48,6 +44,5 @@ def refresh_credentials() -> Resource:
     except HttpError as error:
         # TODO(developer) - Handle errors from gmail API.
         print(f"An error occurred: {error}")
-        
-    
+
     return service
