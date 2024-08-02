@@ -14,8 +14,20 @@ load_dotenv(".env")
 if __name__ == "__main__":
     service = refresh_credentials(os.environ.get("GMAIL_CREDENTIALS_PATH"))
     
-    emails = search_for_new_emails(service, since=pendulum.now().subtract(hours=6), only_unread=True)
-    print(emails)
+    q = GmailQuery(from_='no-reply@clickbus.com.br', subject='Pedido confirmado')
+    print(q.to_gmail_string())
+    
+    req = (
+        service.users()
+        .messages()
+        .list(userId="me", q=q.to_gmail_string())
+    )
+    
+    print(req.execute())
+    
+    
+    # emails = search_for_new_emails(service, since=pendulum.now().subtract(hours=6), only_unread=True)
+    # print(emails)
 
     # Lets create a label called 'Clickbus' and apply it to the email with from tag as no-reply@clickbus.com.br
     # Checking if the label already exists
