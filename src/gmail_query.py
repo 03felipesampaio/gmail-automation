@@ -1,4 +1,5 @@
 from datetime import datetime
+from pendulum.datetime import DateTime
 
 class GmailQuery:
     """A Gmail query constructor to convert the query parameters into strings or to check if a new email matches the query parameters.
@@ -32,7 +33,25 @@ class GmailQuery:
             query += f'filename:{self.filename} '
         
         return query.strip()
-    
 
-def search_for_new_emails(service, userId: str = 'me', since: datetime = None, only_unread: bool = False) -> dict:
-    ...
+
+def search_for_new_emails(service, userId: str = 'me', since: DateTime = None, only_unread: bool = False) -> list[dict]:
+    """Searches for new emails in the user's inbox."""
+    query = '{since} {unread}'.format(
+        since=f'after:{since.int_timestamp}' if since else '',
+        unread='is:unread' if only_unread else ''
+    )
+    # print(query)
+    req = service.users().messages().list(userId=userId, q=query)
+    
+    emails = []
+    while req is not None:
+        res = req.execute()
+        
+        if 'messages' in res:
+            emails.extend(res['messages'])
+        
+        req = service.users().messages().list_next(req, res)
+        
+    return emails
+        
