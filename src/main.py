@@ -1,9 +1,12 @@
 # Gmail API Documentation by Google => https://googleapis.github.io/google-api-python-client/docs/dyn/gmail_v1
+from http import client
 from typing import Callable, Self
 from googleapiclient.discovery import Resource
 from credentials import refresh_credentials
 import json
 import pendulum
+from pymongo import MongoClient
+from pymongo.collection import Collection
 
 from dotenv import load_dotenv
 import os
@@ -12,13 +15,73 @@ import os
 load_dotenv(".env")
 
 
+def get_label_by_name(
+    name: str, service: Resource, label_collection: Collection, userId="me"
+) -> dict:
+    """Gets a label by name. If the label doesn't exist on Gmail API, but exists in database, it will be created.
+
+    Gmail API is the source of truth, so it will be queried first. If the label is not found, it will be queried on the database.
+
+    Args:
+        name (str): Label name
+        service (Resource): Gmail API service
+        label_collection (Collection): MongoDB collection
+        userId (str, optional): Gmail User ID. Defaults to 'me'.
+
+    Returns:
+        dict: Label object
+
+    Raises:
+        ValueError: If label not found neither on Gmail API nor on database
+    """
+    label = next(
+        (
+            x
+            for x in service.users()
+            .labels()
+            .list(userId=userId)
+            .execute()
+            .get("labels", [])
+            if x["name"] == name
+        ),
+        None,
+    )
+
+    db_label = None
+
+    # If label not found on Gmail API, we should query on database
+    if not label:
+        db_label = label_collection.find_one({"name": name})
+        if not db_label:
+            raise ValueError(
+                f"Label {name} not found, please create it on database or Gmail API"
+            )
+        db_label.pop("_id")
+        # Label was found on database and not in Gmail API, so we should create it
+        # Creating label on Gmail API
+        label = service.users().labels().create(userId=userId, body=db_label).execute()
+
+    return label
+
+
 class GmailMessage:
-    """Gmail email message object. 
-    It contains all the information about a message after querying 
+    """Gmail email message object.
+    It contains all the information about a message after querying
     for a message in Gmail API with format equals to "full".
     """
 
-    def __init__(self, id: str, historyId: str, internalDate: str, labelIds: list[str], payload: dict, sizeEstimate: int, snippet: str, threadId: str, raw: str | None = None) -> None:
+    def __init__(
+        self,
+        id: str,
+        historyId: str,
+        internalDate: str,
+        labelIds: list[str],
+        payload: dict,
+        sizeEstimate: int,
+        snippet: str,
+        threadId: str,
+        raw: str | None = None,
+    ) -> None:
         self.id = id
         self.historyId = historyId
         self.internalDate = internalDate
@@ -30,18 +93,30 @@ class GmailMessage:
         self.threadId = threadId
 
         # Loading headers
-        self.from_ = next(x for x in self.payload['headers'] if x['name'] == 'From')[
-            'value']
+        self.from_ = next(x for x in self.payload["headers"] if x["name"] == "From")[
+            "value"
+        ]
         self.subject = next(
-            x for x in self.payload['headers'] if x['name'] == 'Subject')['value']
-        self.date = next(x for x in self.payload['headers'] if x['name'] == 'Date')[
-            'value']
+            x for x in self.payload["headers"] if x["name"] == "Subject"
+        )["value"]
+        self.date = next(x for x in self.payload["headers"] if x["name"] == "Date")[
+            "value"
+        ]
 
         # Attachments
         pass
 
     def add_label(self, service: Resource, label_id: str) -> Self:
-        print('Should add label', label_id)
+        """Adds a label to the message.
+
+        Fails if the label doesn't exist in the Gmail account.
+        """
+        service.users().messages().modify(
+            userId="me", id=self.id, body={"addLabelIds": [label_id]}
+        ).execute()
+
+        # TODO This method changes Message state, so it should return a new instance or update it?
+
         return self
 
     def print(self) -> Self:
@@ -49,22 +124,26 @@ class GmailMessage:
         return self
 
     def write(self, path: str) -> Self:
-        with open(path, 'w', encoding='utf8') as fp:
+        with open(path, "w", encoding="utf8") as fp:
             fp.write(json.dumps(self.__dict__, indent=4, ensure_ascii=False))
 
         return self
 
     def __repr__(self) -> str:
-        return f'<GmailMessage id={self.id} snippet={self.snippet[:25]}>'
+        return f"<GmailMessage id={self.id} snippet={self.snippet[:25]}>"
 
 
 class GmailClassifier:
-    def __init__(self, name: str, query: str, handler: Callable[[GmailMessage], GmailMessage]) -> None:
+    def __init__(
+        self, name: str, query: str, handler: Callable[[GmailMessage], GmailMessage]
+    ) -> None:
         self.name = name.strip()
         self.query = query.strip()
         self.handler = handler
 
-    def classify(self, service: Resource, userId='me', after: str | int = None, **service_args) -> list[GmailMessage]:
+    def classify(
+        self, service: Resource, userId="me", after: str | int = None, **service_args
+    ) -> list[GmailMessage]:
         """Classify messages based on the query provided and executes handlers to all matched.
 
         Args:
@@ -75,43 +154,72 @@ class GmailClassifier:
         Returns:
             list[GmailMessage]: List of classified messages
         """
-        after_query = f'after:{after}' if after else ''
+        after_query = f"after:{after}" if after else ""
 
         raw_messages = []
-        req = service.users().messages().list(
-            userId=userId, q=f'{self.query} {after_query}'.strip(), **service_args)
+        req = (
+            service.users()
+            .messages()
+            .list(
+                userId=userId, q=f"{self.query} {after_query}".strip(), **service_args
+            )
+        )
 
-        print(f'Query: {self.query} {after_query}'.strip())
+        print(f"Query: {self.query} {after_query}".strip())
 
         while req is not None:
             res = req.execute()
 
-            if 'messages' in res:
-                raw_messages.extend(res.get('messages', []))
+            if "messages" in res:
+                raw_messages.extend(res.get("messages", []))
 
             req = service.users().messages().list_next(req, res)
 
         messages = []
         for raw_message in raw_messages:
-            message = self.handler(GmailMessage(**service.users().messages().get(
-                userId=userId, id=raw_message['id'], format='full').execute()))
+            message = self.handler(
+                GmailMessage(
+                    **service.users()
+                    .messages()
+                    .get(userId=userId, id=raw_message["id"], format="full")
+                    .execute()
+                )
+            )
             messages.append(message)
 
         return messages
 
 
 if __name__ == "__main__":
+    # Getting credentials and connections
+    # Gmail credentials
     service = refresh_credentials(os.environ.get("GMAIL_CREDENTIALS_PATH"))
+    # MongoDB connection
+    uri = os.getenv("CONNECTION_STRING")
+    client = MongoClient(uri)
+    db = client["GmailAutomation"]
+
+    query_label = lambda x: get_label_by_name(x, service, db["labels"])
 
     classifiers = [
-        # GmailClassifier('Nubank', 'from:Nubank', lambda x: x.print()),
-        GmailClassifier('Clickbus', 'from:Clickbus subject:"Pedido AROUND 2 confirmado"',
-                        lambda x: x.add_label(service, 'Clickbus').write('clickbus.json')),
+        GmailClassifier(
+            "Nubank",
+            "from:Nubank",
+            lambda x: x.print().add_label(service, query_label("Nubank")["id"]),
+        ),
+        GmailClassifier(
+            "Clickbus",
+            'from:Clickbus subject:"Pedido AROUND 2 confirmado"',
+            lambda x: x.add_label(service, query_label("Clickbus")["id"]).write(
+                "clickbus.json"
+            ),
+        ),
     ]
 
     for classifier in classifiers:
         messages = classifier.classify(
-            service, after=pendulum.now().subtract(days=15).int_timestamp)
+            service, after=pendulum.now().subtract(hours=12).int_timestamp
+        )
         print(f"Classifier: {classifier.name}")
         # print(f"Messages: {messages}")
 
