@@ -142,18 +142,23 @@ class GmailClassifier:
         self.handler = handler
 
     def classify(
-        self, service: Resource, userId="me", after: str | int = None, **service_args
+        self, service: Resource, userId="me", after: int = None, **service_args
     ) -> list[GmailMessage]:
         """Classify messages based on the query provided and executes handlers to all matched.
 
         Args:
             service (Resource): Gmail API service
             userId (str, optional): Gmail User ID. Defaults to 'me'.
-            after (str | int, optional): Date to filter messages. Defaults to None.
+            after (int, optional): Date to filter messages. Defaults to None.
 
         Returns:
             list[GmailMessage]: List of classified messages
         """
+        if after and not isinstance(after, int):
+            raise ValueError(
+                f"after must be an integer, received: {type(after)}: {after}"
+            )
+
         after_query = f"after:{after}" if after else ""
 
         raw_messages = []
@@ -190,6 +195,47 @@ class GmailClassifier:
         return messages
 
 
+def run_classfiers(
+    classifiers: list[GmailClassifier],
+    service: Resource,
+    classfier_collection: Collection,
+) -> None:
+    for classifier in classifiers:
+        # Check if classfier is new
+        classfier_db = classfier_collection.find_one({"name": classifier.name})
+
+        # Creates a new classifier on database if it doesn't exist
+        if not classfier_db:
+            new_classfier_id = classfier_collection.insert_one(
+                {
+                    "name": classifier.name,
+                    "query": classifier.query,
+                    "lastExecution": None,
+                    "deprecated": False,
+                    "deprecatedSince": None,
+                }
+            ).inserted_id
+
+            classfier_db = classfier_collection.find_one({"_id": new_classfier_id})
+
+        if classfier_db["deprecated"]:
+            continue
+
+        messages = classifier.classify(
+            service,
+            after=(
+                pendulum.instance(classfier_db["lastExecution"]).int_timestamp
+                if classfier_db["lastExecution"]
+                else None
+            ),
+        )
+
+        classfier_collection.update_one(
+            {"_id": classfier_db["_id"]},
+            {"$set": {"lastExecution": pendulum.now()}},
+        )
+
+
 if __name__ == "__main__":
     # Getting credentials and connections
     # Gmail credentials
@@ -199,9 +245,17 @@ if __name__ == "__main__":
     client = MongoClient(uri)
     db = client["GmailAutomation"]
 
+    # TODO What if we create a function that returns a dict with name and id?
+    # This function must execute in a setup phase
+    # We don't expect to receive new labels during runtime, so it should be safe to do it
     query_label = lambda x: get_label_by_name(x, service, db["labels"])
 
     classifiers = [
+        GmailClassifier(
+            "NubankPixAutomatico",
+            'from:Nubank subject:"Pix programado enviado com sucesso"',
+            lambda x: x.print().add_label(service, query_label("Nubank")["id"]),
+        ),
         GmailClassifier(
             "Nubank",
             "from:Nubank",
@@ -216,11 +270,6 @@ if __name__ == "__main__":
         ),
     ]
 
-    for classifier in classifiers:
-        messages = classifier.classify(
-            service, after=pendulum.now().subtract(hours=12).int_timestamp
-        )
-        print(f"Classifier: {classifier.name}")
-        # print(f"Messages: {messages}")
+    run_classfiers(classifiers, service, db["classifiers"])
 
     service.close()
