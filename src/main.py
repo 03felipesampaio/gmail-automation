@@ -132,6 +132,9 @@ def run_classfiers(
 
 if __name__ == "__main__":
     setup_logging()
+    
+    start = pendulum.now()
+    logger.info("Starting Gmail Automation execution")
 
     # Getting credentials and connections
     # Gmail credentials
@@ -170,4 +173,6 @@ if __name__ == "__main__":
 
     run_classfiers(classifiers, service, db["classifiers"])
 
+    end = pendulum.now()
+    logger.info(f"Ending Gmail Automation execution. Execution time: {end.diff(start).in_seconds()} seconds")
     service.close()
