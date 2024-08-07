@@ -1,21 +1,43 @@
 # Gmail API Documentation by Google => https://googleapis.github.io/google-api-python-client/docs/dyn/gmail_v1
 from googleapiclient.discovery import Resource
 from credentials import refresh_credentials
+
 # MongoDB libs
 from pymongo import MongoClient
 from pymongo.collection import Collection
+
 # Date and time libs
 import pendulum
+
 # Environment variables
 from dotenv import load_dotenv
 import os
+
 # Logging
-import logging
+import logging.config
+from pathlib import Path
+import json
+import atexit
 
 from gmail import GmailClassifier, GmailMessage
 
 # Load environment variables
 load_dotenv(".env")
+
+
+logger = logging.getLogger("gmail_automation")
+
+
+def setup_logging():
+    log_dir_path = Path(__file__).parent.parent / "logs"
+    log_dir_path.mkdir(exist_ok=True)
+    
+    config_file = Path(__file__).parent.parent / "log_config.json"
+    logging.config.dictConfig(json.loads(config_file.read_text()))
+    queue_handler = logging.getHandlerByName("queue_handler")
+    if queue_handler is not None:
+        queue_handler.listener.start()
+        atexit.register(queue_handler.listener.stop)
 
 
 def get_label_by_name(
@@ -95,10 +117,10 @@ def run_classfiers(
 
         messages = classifier.classify(
             service,
-            after=(
-                pendulum.instance(classfier_db["lastExecution"]).int_timestamp
-                if classfier_db["lastExecution"]
-                else None
+            after=(pendulum.now().subtract(months=2).int_timestamp
+                # pendulum.instance(classfier_db["lastExecution"]).int_timestamp
+                # if classfier_db["lastExecution"]
+                # else None
             ),
         )
 
@@ -109,12 +131,16 @@ def run_classfiers(
 
 
 if __name__ == "__main__":
+    setup_logging()
+
     # Getting credentials and connections
     # Gmail credentials
     service = refresh_credentials(os.environ.get("GMAIL_CREDENTIALS_PATH"))
+    logger.info("Connected to Gmail API")
+
     # MongoDB connection
-    uri = os.getenv("CONNECTION_STRING")
-    client = MongoClient(uri)
+    client = MongoClient(os.getenv("CONNECTION_STRING"))
+    logger.info("Connected to MongoDB")
     db = client["GmailAutomation"]
 
     # TODO What if we create a function that returns a dict with name and id?
@@ -126,12 +152,12 @@ if __name__ == "__main__":
         GmailClassifier(
             "NubankPixAutomatico",
             'from:Nubank subject:"Pix programado enviado com sucesso"',
-            lambda x: x.print().add_label(service, query_label("Nubank")["id"]),
+            lambda x: x.add_label(service, query_label("Nubank")["id"]),
         ),
         GmailClassifier(
             "Nubank",
             "from:Nubank",
-            lambda x: x.print().add_label(service, query_label("Nubank")["id"]),
+            lambda x: x.add_label(service, query_label("Nubank")["id"]),
         ),
         GmailClassifier(
             "Clickbus",

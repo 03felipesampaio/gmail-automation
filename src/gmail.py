@@ -1,6 +1,12 @@
 from typing import Callable, Self
 from googleapiclient.discovery import Resource
 import json
+import logging.config
+import pendulum
+
+# Logger was initialized in the main.py file
+logger = logging.getLogger("gmail_automation")
+
 
 class GmailMessage:
     """Gmail email message object.
@@ -44,14 +50,22 @@ class GmailMessage:
         # Attachments
         pass
 
+        logger.debug(f"Message {self.id} created")
+
     def add_label(self, service: Resource, label_id: str) -> Self:
         """Adds a label to the message.
 
         Fails if the label doesn't exist in the Gmail account.
         """
+        logger.debug(f"Adding label {label_id} to message {self.id}")
+        start = pendulum.now()
         service.users().messages().modify(
             userId="me", id=self.id, body={"addLabelIds": [label_id]}
         ).execute()
+        end = pendulum.now()
+        logger.debug(
+            f"Label {label_id} added to message {self.id} in {end.diff(start).in_seconds()} seconds"
+        )
 
         # TODO This method changes Message state, so it should return a new instance or update it?
 
@@ -79,6 +93,8 @@ class GmailClassifier:
         self.query = query.strip()
         self.handler = handler
 
+        logger.debug(f"Classifier {self.name} created")
+
     def classify(
         self, service: Resource, userId="me", after: int = None, **service_args
     ) -> list[GmailMessage]:
@@ -99,6 +115,11 @@ class GmailClassifier:
 
         after_query = f"after:{after}" if after else ""
 
+        logger.debug(
+            f"Searching messages with query: '{self.query} {after_query}'".strip()
+        )
+
+        start = pendulum.now()
         raw_messages = []
         req = (
             service.users()
@@ -108,8 +129,6 @@ class GmailClassifier:
             )
         )
 
-        print(f"Query: {self.query} {after_query}".strip())
-
         while req is not None:
             res = req.execute()
 
@@ -118,6 +137,11 @@ class GmailClassifier:
 
             req = service.users().messages().list_next(req, res)
 
+        logger.info(
+            f"Classfier '{self.name}' found: {len(raw_messages)} messages in {pendulum.now().diff(start).in_seconds()} seconds".strip()
+        )
+
+        start = pendulum.now()
         messages = []
         for raw_message in raw_messages:
             message = self.handler(
@@ -129,5 +153,11 @@ class GmailClassifier:
                 )
             )
             messages.append(message)
+
+        end = pendulum.now()
+        avg = end.diff(start).in_seconds() / len(messages) if len(messages) else 0
+        logger.info(
+            f"Classfier '{self.name}' fetched and handled: {len(messages)} messages in {end.diff(start).in_seconds()} seconds. Average: {avg:.2f} seconds".strip()
+        )
 
         return messages
