@@ -9,6 +9,9 @@ from pymongo.collection import Collection
 # Date and time libs
 import pendulum
 
+# Async lib
+import asyncio
+
 # Environment variables
 from dotenv import load_dotenv
 import os
@@ -31,7 +34,7 @@ logger = logging.getLogger("gmail_automation")
 def setup_logging():
     log_dir_path = Path(__file__).parent.parent / "logs"
     log_dir_path.mkdir(exist_ok=True)
-    
+
     config_file = Path(__file__).parent.parent / "log_config.json"
     logging.config.dictConfig(json.loads(config_file.read_text()))
     queue_handler = logging.getHandlerByName("queue_handler")
@@ -89,7 +92,7 @@ def get_label_by_name(
     return label
 
 
-def run_classfiers(
+async def run_classfiers(
     classifiers: list[GmailClassifier],
     service: Resource,
     classfier_collection: Collection,
@@ -115,9 +118,12 @@ def run_classfiers(
         if classfier_db["deprecated"]:
             continue
 
-        messages = classifier.classify(
+        messages = await classifier.classify(
             service,
-            after=(pendulum.now().subtract(months=2).int_timestamp
+            after=(
+                pendulum.now()
+                .subtract(months=2)
+                .int_timestamp
                 # pendulum.instance(classfier_db["lastExecution"]).int_timestamp
                 # if classfier_db["lastExecution"]
                 # else None
@@ -130,9 +136,9 @@ def run_classfiers(
         )
 
 
-if __name__ == "__main__":
+async def main():
     setup_logging()
-    
+
     start = pendulum.now()
     logger.info("Starting Gmail Automation execution")
 
@@ -166,13 +172,19 @@ if __name__ == "__main__":
             "Clickbus",
             'from:Clickbus subject:"Pedido AROUND 2 confirmado"',
             lambda x: x.add_label(service, query_label("Clickbus")["id"]).write(
-                "clickbus.json"
+                "clickbus.json", service, userId="me"
             ),
         ),
     ]
 
-    run_classfiers(classifiers, service, db["classifiers"])
+    await run_classfiers(classifiers, service, db["classifiers"])
 
     end = pendulum.now()
-    logger.info(f"Ending Gmail Automation execution. Execution time: {end.diff(start).in_seconds()} seconds")
+    logger.info(
+        f"Ending Gmail Automation execution. Execution time: {end.diff(start).in_seconds()} seconds"
+    )
     service.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

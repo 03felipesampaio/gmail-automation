@@ -3,6 +3,9 @@ from googleapiclient.discovery import Resource
 import json
 import logging.config
 import pendulum
+from pprint import pprint
+
+import asyncio
 
 # Logger was initialized in the main.py file
 logger = logging.getLogger("gmail_automation")
@@ -17,13 +20,13 @@ class GmailMessage:
     def __init__(
         self,
         id: str,
-        historyId: str,
-        internalDate: str,
-        labelIds: list[str],
-        payload: dict,
-        sizeEstimate: int,
-        snippet: str,
-        threadId: str,
+        historyId: str | None = None,
+        internalDate: str | None = None,
+        labelIds: list[str] | None = None,
+        payload: dict | None = None,
+        sizeEstimate: int | None = None,
+        snippet: str | None = None,
+        threadId: str | None = None,
         raw: str | None = None,
     ) -> None:
         self.id = id
@@ -37,20 +40,48 @@ class GmailMessage:
         self.threadId = threadId
 
         # Loading headers
-        self.from_ = next(x for x in self.payload["headers"] if x["name"] == "From")[
-            "value"
-        ]
-        self.subject = next(
-            x for x in self.payload["headers"] if x["name"] == "Subject"
-        )["value"]
-        self.date = next(x for x in self.payload["headers"] if x["name"] == "Date")[
-            "value"
-        ]
+        # self.from_ = next(x for x in self.payload["headers"] if x["name"] == "From")[
+        #     "value"
+        # ]
+        # self.subject = next(
+        #     x for x in self.payload["headers"] if x["name"] == "Subject"
+        # )["value"]
+        # self.date = next(x for x in self.payload["headers"] if x["name"] == "Date")[
+        #     "value"
+        # ]
 
         # Attachments
         pass
 
         logger.debug(f"Message {self.id} created")
+
+    def reload_message(self, service: Resource, userId="me") -> Self:
+        """Loads the message with full format from Gmail API and updates this object.
+
+        Args:
+            service (Resource): Gmail API service
+            userId (str, optional): Gmail User ID. Defaults to 'me'.
+
+        Returns:
+            Self: GmailMessage instance
+        """
+        logger.debug(f"Loading message {self.id}")
+        start = pendulum.now()
+        message = (
+            service.users()
+            .messages()
+            .get(userId=userId, id=self.id, format="full")
+            .execute()
+        )
+        for key, value in message.items():
+            setattr(self, key, value)
+        end = pendulum.now()
+        logger.debug(
+            f"Message {self.id} loaded in {
+                end.diff(start).in_seconds()} seconds"
+        )
+
+        return self
 
     def add_label(self, service: Resource, label_id: str) -> Self:
         """Adds a label to the message.
@@ -64,18 +95,26 @@ class GmailMessage:
         ).execute()
         end = pendulum.now()
         logger.debug(
-            f"Label {label_id} added to message {self.id} in {end.diff(start).in_seconds()} seconds"
+            f"Label {label_id} added to message {self.id} in {
+                end.diff(start).in_seconds()} seconds"
         )
 
         # TODO This method changes Message state, so it should return a new instance or update it?
 
         return self
 
-    def print(self) -> Self:
-        print(self)
+    def print(self, service: Resource, userId="me") -> Self:
+        if self.payload is None:
+            self.reload_message(service, userId=userId)
+
+        pprint(self)
         return self
 
-    def write(self, path: str) -> Self:
+    def write(self, path: str, service: Resource, userId="me") -> Self:
+        """Writes the message to a JSON file."""
+        if self.payload is None:
+            self.reload_message(service, userId=userId)
+
         with open(path, "w", encoding="utf8") as fp:
             fp.write(json.dumps(self.__dict__, indent=4, ensure_ascii=False))
 
@@ -95,7 +134,29 @@ class GmailClassifier:
 
         logger.debug(f"Classifier {self.name} created")
 
-    def classify(
+    def _get_raw_messages(
+        self, service: Resource, query: str, userId="me", **service_args
+    ) -> list[dict]:
+        start = pendulum.now()
+        messages = []
+
+        req = service.users().messages().list(userId=userId, q=query, **service_args)
+
+        while req is not None:
+            res = req.execute()
+
+            messages.extend(res.get("messages", []))
+
+            req = service.users().messages().list_next(req, res)
+
+        logger.info(
+            f"Classfier '{self.name}' found: {len(messages)} messages in {
+                pendulum.now().diff(start).in_seconds()} seconds".strip()
+        )
+
+        return messages
+
+    async def classify(
         self, service: Resource, userId="me", after: int = None, **service_args
     ) -> list[GmailMessage]:
         """Classify messages based on the query provided and executes handlers to all matched.
@@ -116,48 +177,31 @@ class GmailClassifier:
         after_query = f"after:{after}" if after else ""
 
         logger.debug(
-            f"Searching messages with query: '{self.query} {after_query}'".strip()
+            f"Searching messages with query: '{
+                self.query} {after_query}'".strip()
+        )
+
+        raw_messages = self._get_raw_messages(
+            service, f"{self.query} {after_query}".strip(), userId, **service_args
         )
 
         start = pendulum.now()
-        raw_messages = []
-        req = (
-            service.users()
-            .messages()
-            .list(
-                userId=userId, q=f"{self.query} {after_query}".strip(), **service_args
-            )
-        )
 
-        while req is not None:
-            res = req.execute()
-
-            if "messages" in res:
-                raw_messages.extend(res.get("messages", []))
-
-            req = service.users().messages().list_next(req, res)
-
-        logger.info(
-            f"Classfier '{self.name}' found: {len(raw_messages)} messages in {pendulum.now().diff(start).in_seconds()} seconds".strip()
-        )
-
-        start = pendulum.now()
         messages = []
-        for raw_message in raw_messages:
-            message = self.handler(
-                GmailMessage(
-                    **service.users()
-                    .messages()
-                    .get(userId=userId, id=raw_message["id"], format="full")
-                    .execute()
-                )
-            )
-            messages.append(message)
+
+        async with asyncio.TaskGroup() as tg:
+            for raw_message in raw_messages:
+                message = tg.create_task(asyncio.to_thread(
+                    self.handler, GmailMessage(raw_message["id"])))
+                # message = GmailMessage(raw_message["id"]).reload_message(service, 'me')
+                messages.append(message)
 
         end = pendulum.now()
-        avg = end.diff(start).in_seconds() / len(messages) if len(messages) else 0
+        avg = end.diff(start).in_seconds() / \
+            len(messages) if len(messages) else 0
         logger.info(
-            f"Classfier '{self.name}' fetched and handled: {len(messages)} messages in {end.diff(start).in_seconds()} seconds. Average: {avg:.2f} seconds".strip()
+            f"Classfier '{self.name}' fetched and handled: {len(messages)} messages in {
+                end.diff(start).in_seconds()} seconds. Average: {avg:.2f} seconds".strip()
         )
 
         return messages

@@ -1,13 +1,22 @@
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
+import googleapiclient.http
 from googleapiclient.discovery import build, Resource
 from googleapiclient.errors import HttpError
+import google_auth_httplib2
+import httplib2
 
 import os
 
 
 SCOPES = ["https://mail.google.com/"]
+
+
+def build_request(http, *args, **kwargs):
+    new_http = google_auth_httplib2.AuthorizedHttp(
+        http.credentials, http=httplib2.Http())
+    return googleapiclient.http.HttpRequest(new_http, *args, **kwargs)
 
 
 def refresh_credentials(credential_path: str) -> Resource:
@@ -22,7 +31,8 @@ def refresh_credentials(credential_path: str) -> Resource:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(credential_path, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                credential_path, SCOPES)
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
         with open("token.json", "w") as token:
@@ -30,16 +40,10 @@ def refresh_credentials(credential_path: str) -> Resource:
 
     try:
         # Call the Gmail API
-        service = build("gmail", "v1", credentials=creds)
-        # results = service.users().labels().list(userId="me").execute()
-        # labels = results.get("labels", [])
-
-        # if not labels:
-        #     print("No labels found.")
-        #     return
-        # print("Labels:")
-        # for label in labels:
-        #     print(label["name"])
+        authorized_http = google_auth_httplib2.AuthorizedHttp(
+            creds, http=httplib2.Http())
+        service = build("gmail", "v1", http=authorized_http,
+                        requestBuilder=build_request)
 
     except HttpError as error:
         # TODO(developer) - Handle errors from gmail API.
