@@ -1,5 +1,4 @@
 # Gmail API Documentation by Google => https://googleapis.github.io/google-api-python-client/docs/dyn/gmail_v1
-from pdb import run
 from googleapiclient.discovery import Resource
 from credentials import refresh_credentials
 
