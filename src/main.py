@@ -93,7 +93,7 @@ def get_label_by_name(
     return label
 
 
-def run_classfiers(
+async def run_classfiers(
     classifiers: list[GmailClassifier],
     service: Resource,
     classfier_collection: Collection,
@@ -119,7 +119,7 @@ def run_classfiers(
         if classfier_db["deprecated"]:
             continue
 
-        messages = classifier.classify(
+        messages = await classifier.classify(
             service,
             after=(
                 pendulum.now()
@@ -173,12 +173,12 @@ async def main():
             "Clickbus",
             'from:Clickbus subject:"Pedido AROUND 2 confirmado"',
             lambda x: x.add_label(service, query_label("Clickbus")["id"]).write(
-                "clickbus.json"
+                "clickbus.json", service, userId="me"
             ),
         ),
     ]
 
-    run_classfiers(classifiers, service, db["classifiers"])
+    await run_classfiers(classifiers, service, db["classifiers"])
 
     end = pendulum.now()
     logger.info(
