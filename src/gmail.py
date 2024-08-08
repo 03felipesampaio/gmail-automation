@@ -77,7 +77,8 @@ class GmailMessage:
             setattr(self, key, value)
         end = pendulum.now()
         logger.debug(
-            f"Message {self.id} loaded in {end.diff(start).in_seconds()} seconds"
+            f"Message {self.id} loaded in {
+                end.diff(start).in_seconds()} seconds"
         )
 
         return self
@@ -94,7 +95,8 @@ class GmailMessage:
         ).execute()
         end = pendulum.now()
         logger.debug(
-            f"Label {label_id} added to message {self.id} in {end.diff(start).in_seconds()} seconds"
+            f"Label {label_id} added to message {self.id} in {
+                end.diff(start).in_seconds()} seconds"
         )
 
         # TODO This method changes Message state, so it should return a new instance or update it?
@@ -148,7 +150,8 @@ class GmailClassifier:
             req = service.users().messages().list_next(req, res)
 
         logger.info(
-            f"Classfier '{self.name}' found: {len(messages)} messages in {pendulum.now().diff(start).in_seconds()} seconds".strip()
+            f"Classfier '{self.name}' found: {len(messages)} messages in {
+                pendulum.now().diff(start).in_seconds()} seconds".strip()
         )
 
         return messages
@@ -174,7 +177,8 @@ class GmailClassifier:
         after_query = f"after:{after}" if after else ""
 
         logger.debug(
-            f"Searching messages with query: '{self.query} {after_query}'".strip()
+            f"Searching messages with query: '{
+                self.query} {after_query}'".strip()
         )
 
         raw_messages = self._get_raw_messages(
@@ -182,37 +186,22 @@ class GmailClassifier:
         )
 
         start = pendulum.now()
-        
-        # This part must be async
-        # loop = asyncio.get_event_loop()
+
         messages = []
-        
+
         async with asyncio.TaskGroup() as tg:
             for raw_message in raw_messages:
-                message = tg.create_task(asyncio.to_thread(GmailMessage(raw_message["id"]).reload_message, service, 'me'))
+                message = tg.create_task(asyncio.to_thread(
+                    self.handler, GmailMessage(raw_message["id"])))
                 # message = GmailMessage(raw_message["id"]).reload_message(service, 'me')
                 messages.append(message)
-                # messages.append(asyncio.to_thread(self.handler, GmailMessage(raw_message["id"])))
-        
-        # tasks = [asyncio.create_task(asyncio.to_thread(self.handler, GmailMessage(raw_message["id"]))) for raw_message in raw_messages]
-        # done, pending = await asyncio.wait(tasks)
-        # for task in done:
-        #     messages.append(task.result())
-        
-        # for raw_message in raw_messages:
-        #     # message = asyncio.to_thread(self.handler, GmailMessage(raw_message["id"]))
-        #     # message = await loop.run_in_executor(None, self.handler, GmailMessage(raw_message["id"]))
-        #     # message = self.handler(GmailMessage(raw_message["id"]))
-        #     print(type(message))
-        #     raise Exception('')
-        #     # Handler right now is sync
-        #     # Lets make it async
-        #     messages.append(message)
 
         end = pendulum.now()
-        avg = end.diff(start).in_seconds() / len(messages) if len(messages) else 0
+        avg = end.diff(start).in_seconds() / \
+            len(messages) if len(messages) else 0
         logger.info(
-            f"Classfier '{self.name}' fetched and handled: {len(messages)} messages in {end.diff(start).in_seconds()} seconds. Average: {avg:.2f} seconds".strip()
+            f"Classfier '{self.name}' fetched and handled: {len(messages)} messages in {
+                end.diff(start).in_seconds()} seconds. Average: {avg:.2f} seconds".strip()
         )
 
         return messages
