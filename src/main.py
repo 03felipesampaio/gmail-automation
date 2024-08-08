@@ -1,4 +1,5 @@
 # Gmail API Documentation by Google => https://googleapis.github.io/google-api-python-client/docs/dyn/gmail_v1
+from pdb import run
 from googleapiclient.discovery import Resource
 from credentials import refresh_credentials
 
@@ -8,6 +9,9 @@ from pymongo.collection import Collection
 
 # Date and time libs
 import pendulum
+
+# Async lib
+import asyncio
 
 # Environment variables
 from dotenv import load_dotenv
@@ -31,7 +35,7 @@ logger = logging.getLogger("gmail_automation")
 def setup_logging():
     log_dir_path = Path(__file__).parent.parent / "logs"
     log_dir_path.mkdir(exist_ok=True)
-    
+
     config_file = Path(__file__).parent.parent / "log_config.json"
     logging.config.dictConfig(json.loads(config_file.read_text()))
     queue_handler = logging.getHandlerByName("queue_handler")
@@ -117,7 +121,10 @@ def run_classfiers(
 
         messages = classifier.classify(
             service,
-            after=(pendulum.now().subtract(months=2).int_timestamp
+            after=(
+                pendulum.now()
+                .subtract(months=2)
+                .int_timestamp
                 # pendulum.instance(classfier_db["lastExecution"]).int_timestamp
                 # if classfier_db["lastExecution"]
                 # else None
@@ -130,9 +137,9 @@ def run_classfiers(
         )
 
 
-if __name__ == "__main__":
+async def main():
     setup_logging()
-    
+
     start = pendulum.now()
     logger.info("Starting Gmail Automation execution")
 
@@ -174,5 +181,11 @@ if __name__ == "__main__":
     run_classfiers(classifiers, service, db["classifiers"])
 
     end = pendulum.now()
-    logger.info(f"Ending Gmail Automation execution. Execution time: {end.diff(start).in_seconds()} seconds")
+    logger.info(
+        f"Ending Gmail Automation execution. Execution time: {end.diff(start).in_seconds()} seconds"
+    )
     service.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
