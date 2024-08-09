@@ -15,7 +15,7 @@ SCOPES = ["https://mail.google.com/"]
 
 def build_request(http, *args, **kwargs):
     new_http = google_auth_httplib2.AuthorizedHttp(
-        http.credentials, http=httplib2.Http())
+        http.credentials, http=httplib2.Http(cache='.cache'))
     return googleapiclient.http.HttpRequest(new_http, *args, **kwargs)
 
 
@@ -41,7 +41,7 @@ def refresh_credentials(credential_path: str) -> Resource:
     try:
         # Call the Gmail API
         authorized_http = google_auth_httplib2.AuthorizedHttp(
-            creds, http=httplib2.Http())
+            creds, http=httplib2.Http(cache='.cache'))
         service = build("gmail", "v1", http=authorized_http,
                         requestBuilder=build_request)
 
