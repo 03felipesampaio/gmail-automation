@@ -82,7 +82,8 @@ def get_label_by_name(
         db_label = label_collection.find_one({"name": name})
         if not db_label:
             raise ValueError(
-                f"Label {name} not found, please create it on database or Gmail API"
+                f"Label {
+                    name} not found, please create it on database or Gmail API"
             )
         db_label.pop("_id")
         # Label was found on database and not in Gmail API, so we should create it
@@ -97,43 +98,47 @@ async def run_classfiers(
     service: Resource,
     classfier_collection: Collection,
 ) -> None:
-    for classifier in classifiers:
-        # Check if classfier is new
-        classfier_db = classfier_collection.find_one({"name": classifier.name})
+    async with asyncio.TaskGroup() as tg:
+        for classifier in classifiers:
+            # Check if classfier is new
+            classfier_db = classfier_collection.find_one(
+                {"name": classifier.name})
 
-        # Creates a new classifier on database if it doesn't exist
-        if not classfier_db:
-            new_classfier_id = classfier_collection.insert_one(
-                {
-                    "name": classifier.name,
-                    "query": classifier.query,
-                    "lastExecution": None,
-                    "deprecated": False,
-                    "deprecatedSince": None,
-                }
-            ).inserted_id
+            # Creates a new classifier on database if it doesn't exist
+            if not classfier_db:
+                new_classfier_id = classfier_collection.insert_one(
+                    {
+                        "name": classifier.name,
+                        "query": classifier.query,
+                        "lastExecution": None,
+                        "deprecated": False,
+                        "deprecatedSince": None,
+                    }
+                ).inserted_id
 
-            classfier_db = classfier_collection.find_one({"_id": new_classfier_id})
+                classfier_db = classfier_collection.find_one(
+                    {"_id": new_classfier_id})
 
-        if classfier_db["deprecated"]:
-            continue
+            if classfier_db["deprecated"]:
+                continue
 
-        messages = await classifier.classify(
-            service,
-            after=(
-                pendulum.now()
-                .subtract(months=2)
-                .int_timestamp
-                # pendulum.instance(classfier_db["lastExecution"]).int_timestamp
-                # if classfier_db["lastExecution"]
-                # else None
-            ),
-        )
 
-        classfier_collection.update_one(
-            {"_id": classfier_db["_id"]},
-            {"$set": {"lastExecution": pendulum.now()}},
-        )
+            messages = tg.create_task(classifier.classify(
+                service,
+                after=(
+                    pendulum.now()
+                    .subtract(months=2)
+                    .int_timestamp
+                    # pendulum.instance(classfier_db["lastExecution"]).int_timestamp
+                    # if classfier_db["lastExecution"]
+                    # else None
+                ),
+            ))
+
+            classfier_collection.update_one(
+                {"_id": classfier_db["_id"]},
+                {"$set": {"lastExecution": pendulum.now()}},
+            )
 
 
 async def main():
@@ -155,7 +160,7 @@ async def main():
     # TODO What if we create a function that returns a dict with name and id?
     # This function must execute in a setup phase
     # We don't expect to receive new labels during runtime, so it should be safe to do it
-    query_label = lambda x: get_label_by_name(x, service, db["labels"])
+    def query_label(x): return get_label_by_name(x, service, db["labels"])
 
     classifiers = [
         GmailClassifier(
@@ -181,7 +186,8 @@ async def main():
 
     end = pendulum.now()
     logger.info(
-        f"Ending Gmail Automation execution. Execution time: {end.diff(start).in_seconds()} seconds"
+        f"Ending Gmail Automation execution. Execution time: {
+            end.diff(start).in_seconds()} seconds"
     )
     service.close()
 
