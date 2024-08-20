@@ -22,7 +22,7 @@ from pathlib import Path
 import json
 import atexit
 
-from gmail import GmailClassifier, GmailMessage
+from gmail import GmailClassifier, GmailMessage, CloudStorage, save_attachment_locally
 
 # Load environment variables
 load_dotenv(".env")
@@ -41,6 +41,31 @@ def setup_logging():
     if queue_handler is not None:
         queue_handler.listener.start()
         atexit.register(queue_handler.listener.stop)
+
+
+def setup_labels(service: Resource, user_labels: dict, userId="me") -> dict:
+    """Creates user defined labels on Gmail API and returns all labels.
+
+    Args:
+        service (Resource): Gmail API service
+        user_labels (dict): User defined labels
+        userId (str, optional): Gmail User ID. Defaults to 'me'.
+    """
+    # Getting all labels from Gmail API
+    labels = service.users().labels().list(
+        userId=userId).execute().get("labels", [])
+
+    # Getting all labels names from Gmail API
+    labels_names = [x["name"] for x in labels]
+
+    # Creating user defined labels on Gmail API
+    for label in user_labels:
+        if label['name'] not in labels_names:
+            logger.info(f"Creating label '{label['name']}' on Gmail API")
+            service.users().labels().create(userId=userId, body=label).execute()
+
+    # Queries all labels from Gmail API again
+    return service.users().labels().list(userId=userId).execute().get("labels", [])
 
 
 def get_label_by_name(
@@ -122,19 +147,20 @@ async def run_classfiers(
             if classfier_db["deprecated"]:
                 continue
 
-
             messages = tg.create_task(classifier.classify(
                 service,
                 after=(
-                    pendulum.now()
-                    .subtract(months=2)
-                    .int_timestamp
-                    # pendulum.instance(classfier_db["lastExecution"]).int_timestamp
-                    # if classfier_db["lastExecution"]
-                    # else None
+                    # pendulum.now()
+                    # .subtract(months=6)
+                    # .int_timestamp
+                    pendulum.instance(
+                        classfier_db["lastExecution"]).int_timestamp
+                    if classfier_db["lastExecution"]
+                    else None
                 ),
             ))
 
+            # Update lastExecution field
             classfier_collection.update_one(
                 {"_id": classfier_db["_id"]},
                 {"$set": {"lastExecution": pendulum.now()}},
@@ -160,26 +186,56 @@ async def main():
     # TODO What if we create a function that returns a dict with name and id?
     # This function must execute in a setup phase
     # We don't expect to receive new labels during runtime, so it should be safe to do it
-    def query_label(x): return get_label_by_name(x, service, db["labels"])
+    user_labels = list(db["labels"].find())
+    for label in user_labels:
+        label.pop("_id")
+
+    labels = {l['name']: l for l in setup_labels(service, user_labels)}
+
+    storage = CloudStorage(None)
 
     classifiers = [
         GmailClassifier(
-            "NubankPixAutomatico",
-            'from:Nubank subject:"Pix programado enviado com sucesso"',
-            lambda x: x.add_label(service, query_label("Nubank")["id"]),
-        ),
-        GmailClassifier(
             "Nubank",
             "from:Nubank",
-            lambda x: x.add_label(service, query_label("Nubank")["id"]),
+            lambda x: x.add_label(service, labels["Nubank"]["id"]),
+        ),
+        GmailClassifier(
+            'FaturaNubank',
+            'subject:"A fatura do seu cartão Nubank está fechada"',
+            lambda x: x.add_label(
+                service, labels["Nubank/Fatura Nubank"]["id"])
         ),
         GmailClassifier(
             "Clickbus",
             'from:Clickbus subject:"Pedido AROUND 2 confirmado"',
-            lambda x: x.add_label(service, query_label("Clickbus")["id"]).write(
+            lambda x: x.add_label(service, labels["Clickbus"]["id"]).write(
                 "clickbus.json", service, userId="me"
             ),
         ),
+        GmailClassifier(
+            "ClickbusPedidos",
+            'from:"Clickbus" subject:("Oba! Sua viagem está confirmada!" OR "Pedido")',
+            lambda x: x.add_label(service, labels["Clickbus/Pedidos"]["id"])
+        ),
+        GmailClassifier(
+            'InternetClaro',
+            'from:"Fatura Claro"',
+            # lambda x: x.add_label(service, labels["Internet Claro"]["id"]).download_attachments(service, save_attachment_locally)
+            lambda x: x.add_label(service, labels["Internet Claro"]["id"]).download_attachments(
+                service, storage.get_dir('attachments/fatura_claro').write_attachment)
+        ),
+        GmailClassifier(
+            'FaturaInter',
+            'subject:"Fatura Cartão Inter"',
+            lambda x: x.add_label(service, labels["Fatura Inter"]["id"]).download_attachments(
+                service, storage.get_dir('attachments/fatura_inter').write_attachment)
+        ),
+        GmailClassifier(
+            'Preply',
+            'from:Preply',
+            lambda x: x.add_label(service, labels["Preply"]["id"])
+        )
     ]
 
     await run_classfiers(classifiers, service, db["classifiers"])
