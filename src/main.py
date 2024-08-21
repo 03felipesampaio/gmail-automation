@@ -23,6 +23,7 @@ import json
 import atexit
 
 from gmail import GmailClassifier, GmailMessage, CloudStorage, save_attachment_locally
+import handlers.attachments
 
 # Load environment variables
 load_dotenv(".env")
@@ -223,7 +224,7 @@ async def main():
             'from:"Fatura Claro"',
             # lambda x: x.add_label(service, labels["Internet Claro"]["id"]).download_attachments(service, save_attachment_locally)
             lambda x: x.add_label(service, labels["Internet Claro"]["id"]).download_attachments(
-                service, storage.get_dir('attachments/fatura_claro').write_attachment)
+                service, handlers.attachments.SaveLocallyAttachmentHandler(Path('attachments/Claro')).execute)
         ),
         GmailClassifier(
             'FaturaInter',
