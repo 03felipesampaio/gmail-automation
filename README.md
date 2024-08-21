@@ -1,6 +1,8 @@
 # Gmail Automation
 
-Managing your emails can be a tedious process. But why are you spending all this time manually labeling, forwarding, deleting and downloding attachments when we can handle those things to you?
+Managing your emails can be a tedious process. 
+
+But why are you spending all this time manually labeling, forwarding, deleting and downloding attachments when **we can handle those things to you**?
 
 This is a self-hosted app to manage all your Gmail messages.
 
