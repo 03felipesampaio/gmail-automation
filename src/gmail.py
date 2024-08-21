@@ -121,29 +121,30 @@ class GmailMessage:
             fp.write(json.dumps(self.__dict__, indent=4, ensure_ascii=False))
 
         return self
-    
+
     def download_attachments(self, service: Resource, handler: Callable[[dict], None], userId="me", filter: Callable[[dict], bool] = lambda x: True) -> Self:
         """Downloads the attachment from the message."""
         if self.payload is None:
             self.reload_message(service, userId=userId)
-        
+
         # TODO Implement download attachment
         for part in self.payload["parts"]:
             if 'attachmentId' not in part['body'] or not filter(part):
                 continue
-            
+
             attachment = service.users().messages().attachments().get(
                 userId=userId, messageId=self.id, id=part['body']['attachmentId']
             ).execute()
             logger.debug(f"Downloading attachment {part['filename']}")
-            
+
             attachment['filename'] = part['filename']
             attachment['message_id'] = self.id
-            attachment['date'] = pendulum.from_timestamp(int(self.internalDate[:-3]))
+            attachment['date'] = pendulum.from_timestamp(
+                int(self.internalDate[:-3]))
             attachment['data'] = base64.urlsafe_b64decode(attachment["data"])
-            
+
             handler(attachment)
-            
+
         return self
 
     def __repr__(self) -> str:
@@ -231,73 +232,3 @@ class GmailClassifier:
         )
 
         return messages
-
-
-
-class CloudDirectory:
-    def __init__(self, path: str) -> None:
-        self.path = path
-        
-        if not self.check_path_is_valid(path):
-            raise ValueError(f"Invalid path: {path}")
-        
-    def check_path_is_valid(self, path: str) -> bool:
-        """Check if is a real path in the cloud storage.
-
-        Args:
-            path (str): Path to check
-
-        Returns:
-            bool: If path is valid
-        """
-        return True
-    
-    def write_attachment(self, attachment: dict) -> None:
-        """Save an attachment to a bucket.
-
-        Args:
-            attachment (dict): Attachment object with the format: 
-            {
-                "filename": str,
-                "data": str,
-                "date": pendulum.DateTime
-            }
-        """
-        filename, extension = attachment['filename'].split('.')
-    
-        complete_filename = f'{filename}-{attachment['date'].to_date_string()}.{extension}'
-        file_path = f'{self.path}/{complete_filename}'
-        path = Path(file_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        
-        path.write_bytes(attachment['data'])
-
-
-class CloudStorage:
-    def __init__(self, creds) -> None:
-        pass
-    
-    def get_dir(self, path: str) -> CloudDirectory:
-        """Create or get a directory in the cloud storage.
-
-        Args:
-            path (str): _description_
-        """
-        return CloudDirectory(path)
-    
-# CloudStorage(None).get_dir('attachments').write_attachment({
-#     "filename": "test.txt",
-#     "data": "test".encode('utf8'),
-#     "date": pendulum.now().subtract(days=1)
-# })
-
-
-def save_attachment_locally(attachment: dict) -> None:
-    """Saves an attachment locally."""
-    attach_dir = Path('./attachments')
-    attach_dir.mkdir(exist_ok=True)
-    
-    filename, extension = attachment['filename'].split('.')
-    
-    file_path = attach_dir / f'{filename}-{attachment['date'].to_date_string()}.{extension}'
-    file_path.write_bytes(base64.urlsafe_b64decode(attachment["data"]))
