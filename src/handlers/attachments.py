@@ -14,7 +14,7 @@ class SaveLocallyAttachmentHandler (BaseAttachmentHandler):
     def __init__(self, downloads_dir: Path | str, fail_if_file_exists=False) -> None:
         """Creates a handler to save attachments locally. Pass the directory where the attachments will be saved.
         After that, pass the attachment dictionary to the execute method.
-        
+
         The directory and it parents will be created if they don't exist.
 
         Args:
@@ -28,10 +28,10 @@ class SaveLocallyAttachmentHandler (BaseAttachmentHandler):
         self.fail_if_file_exists = fail_if_file_exists
 
         try:
-            downloads_dir.mkdir(exist_ok=True, parents=True)
+            self.downloads_dir.mkdir(exist_ok=True, parents=True)
         except Exception as e:
             raise Exception(f"Error creating downloads directory {
-                            downloads_dir.as_posix()}") from e
+                            self.downloads_dir.as_posix()}") from e
 
     def execute(self, attachment: dict) -> None:
         """Run the handler to save the attachment locally.
