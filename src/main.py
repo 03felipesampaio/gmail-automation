@@ -21,9 +21,11 @@ import logging.config
 from pathlib import Path
 import json
 import atexit
+from pprint import pprint
 
-from gmail import GmailClassifier, GmailMessage, CloudStorage, save_attachment_locally
-import handlers.attachments
+from gmail import GmailClassifier, GmailMessage
+from handlers.attachments import SaveLocallyAttachmentHandler
+from handlers.messages import MessageHandler
 
 # Load environment variables
 load_dotenv(".env")
@@ -151,13 +153,13 @@ async def run_classfiers(
             messages = tg.create_task(classifier.classify(
                 service,
                 after=(
-                    # pendulum.now()
-                    # .subtract(months=6)
-                    # .int_timestamp
-                    pendulum.instance(
-                        classfier_db["lastExecution"]).int_timestamp
-                    if classfier_db["lastExecution"]
-                    else None
+                    pendulum.now()
+                    .subtract(months=2)
+                    .int_timestamp
+                    # pendulum.instance(
+                    #     classfier_db["lastExecution"]).int_timestamp
+                    # if classfier_db["lastExecution"]
+                    # else None
                 ),
             ))
 
@@ -191,56 +193,64 @@ async def main():
     for label in user_labels:
         label.pop("_id")
 
-    labels = {l['name']: l for l in setup_labels(service, user_labels)}
-
-    storage = CloudStorage(None)
+    labels = {l['name']: l['id'] for l in setup_labels(service, user_labels)}
 
     classifiers = [
         GmailClassifier(
             "Nubank",
             "from:Nubank",
-            lambda x: x.add_label(service, labels["Nubank"]["id"]),
+            MessageHandler(service, "me").get_content('full').manage_labels(
+                [labels['Nubank']]).save_to_json('messages/nubank').execute,
         ),
         GmailClassifier(
             'FaturaNubank',
             'subject:"A fatura do seu cartão Nubank está fechada"',
-            lambda x: x.add_label(
-                service, labels["Nubank/Fatura Nubank"]["id"])
+            MessageHandler(service, "me").manage_labels(
+                [labels['Nubank/Fatura Nubank']]).execute,
         ),
         GmailClassifier(
             "Clickbus",
             'from:Clickbus subject:"Pedido AROUND 2 confirmado"',
-            lambda x: x.add_label(service, labels["Clickbus"]["id"]).write(
-                "clickbus.json", service, userId="me"
-            ),
+            MessageHandler(service, "me").manage_labels(
+                [labels['Clickbus']]).execute,
         ),
         GmailClassifier(
             "ClickbusPedidos",
             'from:"Clickbus" subject:("Oba! Sua viagem está confirmada!" OR "Pedido")',
-            lambda x: x.add_label(service, labels["Clickbus/Pedidos"]["id"])
+            MessageHandler(service, "me").manage_labels(
+                [labels['Clickbus/Pedidos']]).execute,
         ),
         GmailClassifier(
             'InternetClaro',
             'from:"Fatura Claro"',
-            # lambda x: x.add_label(service, labels["Internet Claro"]["id"]).download_attachments(service, save_attachment_locally)
-            lambda x: x.add_label(service, labels["Internet Claro"]["id"]).download_attachments(
-                service, handlers.attachments.SaveLocallyAttachmentHandler(Path('attachments/Claro')).execute)
+            MessageHandler(service, "me")
+                .get_content('full')
+                .manage_labels([labels['Internet Claro']])
+                .download_attachments(SaveLocallyAttachmentHandler('attachments/Claro').execute)
+                .execute
         ),
         GmailClassifier(
             'FaturaInter',
             'subject:"Fatura Cartão Inter"',
-            lambda x: x.add_label(service, labels["Fatura Inter"]["id"]).download_attachments(
-                service, storage.get_dir('attachments/fatura_inter').write_attachment)
+            MessageHandler(service, "me")
+                .get_content('full')
+                .manage_labels([labels['Fatura Inter']])
+                .save_to_json('messages/FaturaInter')
+                .download_attachments(
+                    SaveLocallyAttachmentHandler('attachments/FaturaInter').execute)
+                .execute,
         ),
         GmailClassifier(
             'Preply',
             'from:Preply',
-            lambda x: x.add_label(service, labels["Preply"]["id"])
+            MessageHandler(service, "me")
+                .manage_labels([labels['Preply']])
+                .execute
         )
     ]
 
     await run_classfiers(classifiers, service, db["classifiers"])
-
+    
     end = pendulum.now()
     logger.info(
         f"Ending Gmail Automation execution. Execution time: {
