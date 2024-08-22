@@ -1,8 +1,12 @@
 from typing import Self, Callable, Literal
+from pathlib import Path
 from gmail import GmailMessage
 from googleapiclient.discovery import Resource
+from googleapiclient.errors import HttpError
 import pendulum
 import base64
+import json
+from pprint import pprint
 
 import logging
 
@@ -36,15 +40,17 @@ class MessageHandler:
         """
         # TODO Split the list in chunks of 500 messages.
         batch_req = service.new_batch_http_request()
+        
+        def update_message(message) -> Callable[[str, dict, HttpError], None]:
+                def callback(req_id, res, exc):
+                    if exc is not None:
+                        raise exc
+                    message.update(**res)
+                return callback
 
-        for message in messages:
-            def callback(req_id, res, exc):
-                if exc is not None:
-                    raise exc
-                message.update(**res)
-
+        for message in messages:         
             batch_req.add(service.users().messages().get(
-                userId=userId, id=message.id, format='metadata'), callback=callback)
+                userId=userId, id=message.id, format='minimal'), request_id=message.id, callback=update_message(message))
 
         batch_req.execute()
 
@@ -54,13 +60,16 @@ class MessageHandler:
         def handler(service, userId, messages):
             batch_req = service.new_batch_http_request()
 
-            for message in messages:
+            def update_message(message) -> Callable[[str, dict, HttpError], None]:
                 def callback(req_id, res, exc):
                     if exc is not None:
                         raise exc
                     message.update(**res)
+                return callback
+
+            for message in messages:
                 batch_req.add(service.users().messages().get(
-                    userId=userId, id=message.id, format=format), callback=callback)
+                    userId=userId, id=message.id, format=format), callback=update_message(message))
 
             batch_req.execute()
 
@@ -68,6 +77,28 @@ class MessageHandler:
 
         logger.info(f'Add fetch messages content in {
                     format} format to execution plan')
+
+        return self
+
+    def save_to_json(self, path_dir: str | Path) -> Self:
+        """Saves messages to a JSON file.
+
+        Args:
+            path_dir (str | Path): Path to save the JSON file.
+        """
+        path_dir = Path(path_dir)
+        path_dir.mkdir(parents=True, exist_ok=True)
+
+        def handler(service, userId, messages):
+            for message in messages:
+                if message.payload is None:
+                    raise ValueError(
+                        'Message payload is not loaded. Call get() method before save_to_json()')
+                file_path = path_dir / f'{message.id}.json'
+                file_path.write_text(json.dumps(
+                    message.__dict__, indent=4, ensure_ascii=False), encoding='utf8')
+
+        self._add_to_execution_plan(handler)
 
         return self
 
@@ -90,9 +121,9 @@ class MessageHandler:
             batch_req = service.new_batch_http_request()
 
             for message in messages:
-                if message.payload is None:
+                if message.payload is None or 'parts' not in message.payload:
                     raise ValueError(
-                        'Message payload is not loaded. Call get() method before download_attachments()')
+                        f'Message payload is not loaded. Call get() method before download_attachments(). Message ID: {message.id}')
 
                 for part in message.payload["parts"]:
                     if 'attachmentId' not in part['body'] or not filter(part):
@@ -119,7 +150,7 @@ class MessageHandler:
 
         return self
 
-    def manage_labels(self, add_labels: list[str], remove_labels: list[str]) -> Self:
+    def manage_labels(self, add_labels: list[str] = None, remove_labels: list[str] = None) -> Self:
         """Manages labels for the message.
 
         Args:
@@ -127,11 +158,25 @@ class MessageHandler:
             remove_labels (list[str]): Labels Ids to be removed from the message. Doesn't fail if the label doesn't exist.
         """
         # TODO batchModify only accepts max of 1000 messages. Break the list in chunks of 500 messages.
-        def handler(service, userId, messages): return service.users().messages().batchModify(userId=userId, body={
-            'addLabelIds': add_labels,
-            'removeLabelIds': remove_labels,
-            'ids': [message.id for message in messages]
-        }).execute()
+        def handler(service, userId, messages):
+            if not messages:
+                return
+
+            labels = service.users().labels().list(
+                userId=userId).execute().get("labels", [])
+            labels_ids = [label['id'] for label in labels]
+
+            for l in add_labels or []:
+                if l not in labels_ids:
+                    raise ValueError(f'Label {l} not found on Gmail API')
+
+            service.users().messages().batchModify(userId=userId, body={
+                'addLabelIds': add_labels,
+                'removeLabelIds': remove_labels,
+                'ids': [message.id for message in messages]
+            }).execute()
+            # except HttpError as e:
+            #     logger.error(f'There is no label with the given ID. {e}')
 
         self._add_to_execution_plan(handler)
         self._add_to_execution_plan(self._refresh_messages)
