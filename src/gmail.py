@@ -41,75 +41,16 @@ class GmailMessage:
         self.snippet = snippet
         self.threadId = threadId
 
-        # Loading headers
-        # self.from_ = next(x for x in self.payload["headers"] if x["name"] == "From")[
-        #     "value"
-        # ]
-        # self.subject = next(
-        #     x for x in self.payload["headers"] if x["name"] == "Subject"
-        # )["value"]
-        # self.date = next(x for x in self.payload["headers"] if x["name"] == "Date")[
-        #     "value"
-        # ]
-
-        # Attachments
-        pass
-
         logger.debug(f"Message {self.id} created")
 
-    def reload_message(self, service: Resource, userId="me") -> Self:
-        """Loads the message with full format from Gmail API and updates this object.
+    def update(self, **kwargs) -> Self:
+        if 'id' in kwargs and kwargs['id'] != self.id:
+            raise ValueError(f"Message ID mismatch. Expected: {
+                             self.id}, received: {kwargs['id']}")
 
-        Args:
-            service (Resource): Gmail API service
-            userId (str, optional): Gmail User ID. Defaults to 'me'.
-
-        Returns:
-            Self: GmailMessage instance
-        """
-        logger.debug(f"Loading message {self.id}")
-        start = pendulum.now()
-        message = (
-            service.users()
-            .messages()
-            .get(userId=userId, id=self.id, format="full")
-            .execute()
-        )
-        for key, value in message.items():
+        for key, value in kwargs.items():
             setattr(self, key, value)
-        end = pendulum.now()
-        logger.debug(
-            f"Message {self.id} loaded in {
-                end.diff(start).in_seconds()} seconds"
-        )
 
-        return self
-
-    def add_label(self, service: Resource, label_id: str) -> Self:
-        """Adds a label to the message.
-
-        Fails if the label doesn't exist in the Gmail account.
-        """
-        logger.debug(f"Adding label {label_id} to message {self.id}")
-        start = pendulum.now()
-        service.users().messages().modify(
-            userId="me", id=self.id, body={"addLabelIds": [label_id]}
-        ).execute()
-        end = pendulum.now()
-        logger.debug(
-            f"Label {label_id} added to message {self.id} in {
-                end.diff(start).in_seconds()} seconds"
-        )
-
-        # TODO This method changes Message state, so it should return a new instance or update it?
-
-        return self
-
-    def print(self, service: Resource, userId="me") -> Self:
-        if self.payload is None:
-            self.reload_message(service, userId=userId)
-
-        pprint(self)
         return self
 
     def write(self, path: str, service: Resource, userId="me") -> Self:
@@ -122,33 +63,8 @@ class GmailMessage:
 
         return self
 
-    def download_attachments(self, service: Resource, handler: Callable[[dict], None], userId="me", filter: Callable[[dict], bool] = lambda x: True) -> Self:
-        """Downloads the attachment from the message."""
-        if self.payload is None:
-            self.reload_message(service, userId=userId)
-
-        # TODO Implement download attachment
-        for part in self.payload["parts"]:
-            if 'attachmentId' not in part['body'] or not filter(part):
-                continue
-
-            attachment = service.users().messages().attachments().get(
-                userId=userId, messageId=self.id, id=part['body']['attachmentId']
-            ).execute()
-            logger.debug(f"Downloading attachment {part['filename']}")
-
-            attachment['filename'] = part['filename']
-            attachment['message_id'] = self.id
-            attachment['date'] = pendulum.from_timestamp(
-                int(self.internalDate[:-3]))
-            attachment['data'] = base64.urlsafe_b64decode(attachment["data"])
-
-            handler(attachment)
-
-        return self
-
     def __repr__(self) -> str:
-        return f"<GmailMessage id={self.id} snippet={self.snippet[:25]}>"
+        return f"<GmailMessage id={self.id}>"
 
 
 class GmailClassifier:
@@ -161,9 +77,23 @@ class GmailClassifier:
 
         logger.debug(f"Classifier {self.name} created")
 
-    def _get_raw_messages(
+    def _get_minimal_messages(
         self, service: Resource, query: str, userId="me", **service_args
     ) -> list[dict]:
+        """Search for all messages that match the query provided.
+
+        Args:
+            service (Resource): Gmail Resource
+            query (str): Query to search
+            userId (str, optional): User ID. Defaults to "me".
+
+        Returns:
+            list[dict]: Fetched messages from Gmail API in the format:
+                {
+                    "id": str,
+                    "threadId": str
+                } 
+        """
         start = pendulum.now()
         messages = []
 
@@ -208,7 +138,7 @@ class GmailClassifier:
                 self.query} {after_query}'".strip()
         )
 
-        raw_messages = self._get_raw_messages(
+        raw_messages = self._get_minimal_messages(
             service, f"{self.query} {after_query}".strip(), userId, **service_args
         )
 
@@ -217,11 +147,10 @@ class GmailClassifier:
         messages = []
 
         async with asyncio.TaskGroup() as tg:
-            for raw_message in raw_messages:
-                message = tg.create_task(asyncio.to_thread(
-                    self.handler, GmailMessage(raw_message["id"])))
-                # message = GmailMessage(raw_message["id"]).reload_message(service, 'me')
-                messages.append(message)
+            gmail_messages = [GmailMessage(**r) for r in raw_messages]
+            await tg.create_task(asyncio.to_thread(self.handler, gmail_messages))
+
+            messages.extend(gmail_messages)
 
         end = pendulum.now()
         avg = end.diff(start).in_seconds() / \
