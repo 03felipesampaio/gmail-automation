@@ -40,15 +40,15 @@ class MessageHandler:
         """
         # TODO Split the list in chunks of 500 messages.
         batch_req = service.new_batch_http_request()
-        
-        def update_message(message) -> Callable[[str, dict, HttpError], None]:
-                def callback(req_id, res, exc):
-                    if exc is not None:
-                        raise exc
-                    message.update(**res)
-                return callback
 
-        for message in messages:         
+        def update_message(message) -> Callable[[str, dict, HttpError], None]:
+            def callback(req_id, res, exc):
+                if exc is not None:
+                    raise exc
+                message.update(**res)
+            return callback
+
+        for message in messages:
             batch_req.add(service.users().messages().get(
                 userId=userId, id=message.id, format='minimal'), request_id=message.id, callback=update_message(message))
 
@@ -117,6 +117,17 @@ class MessageHandler:
                         'data': bytes
                     }
         """
+        def get_callback(message, filename):
+            return lambda req_id, res, exc: attachment_handler(
+                update_attachment(
+                    res,
+                    filename=filename,
+                    message_id=message.id,
+                    date=pendulum.from_timestamp(
+                        int(message.internalDate[:-3]))
+                )
+            )
+
         def handler(service, userId, messages):
             batch_req = service.new_batch_http_request()
 
@@ -132,16 +143,7 @@ class MessageHandler:
                     batch_req.add(
                         service.users().messages().attachments().get(
                             userId=userId, messageId=message.id, id=part['body']['attachmentId']),
-                        callback=lambda req_id, res, exc: attachment_handler(
-                            update_attachment(
-                                res,
-                                filename=part['filename'],
-                                message_id=message.id,
-                                date=pendulum.from_timestamp(
-                                    int(message.internalDate[:-3]))
-                            )
-                        )
-
+                        callback=get_callback(message, part['filename'])
                     )
 
             batch_req.execute()
