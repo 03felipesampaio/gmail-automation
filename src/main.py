@@ -25,7 +25,7 @@ import atexit
 from pprint import pprint
 
 from gmail import GmailClassifier, GmailMessage
-from handlers.attachments import SaveLocallyAttachmentHandler, AttachmentHandler
+from handlers.attachments import AttachmentHandler
 from handlers.messages import MessageHandler
 
 # Load environment variables
@@ -155,7 +155,7 @@ async def run_classfiers(
                 service,
                 after=(
                     pendulum.now()
-                    .subtract(months=6)
+                    .subtract(months=2)
                     .int_timestamp
                     # pendulum.instance(
                     #     classfier_db["lastExecution"]).int_timestamp
@@ -234,7 +234,7 @@ async def main():
             MessageHandler(service, "me")
                 .get_content('full')
                 .manage_labels([labels['Internet Claro']])
-                .download_attachments(SaveLocallyAttachmentHandler('attachments/Claro').execute)
+                .download_attachments(AttachmentHandler().save_locally('attachments/Claro').execute)
                 .execute
         ),
         GmailClassifier(
@@ -243,9 +243,8 @@ async def main():
             MessageHandler(service, "me")
                 .get_content('full')
                 .manage_labels([labels['Fatura Inter']])
-                .save_to_json('messages/FaturaInter')
                 .download_attachments(
-                    lambda x: AttachmentHandler().write_on_cloud_storage(bucket, x, 'Faturas/Inter'))
+                    AttachmentHandler().write_on_cloud_storage(bucket, 'Faturas/Inter').execute)
                 .execute,
         ),
         GmailClassifier(
