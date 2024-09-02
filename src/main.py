@@ -1,5 +1,6 @@
 # Gmail API Documentation by Google => https://googleapis.github.io/google-api-python-client/docs/dyn/gmail_v1
 from googleapiclient.discovery import Resource
+from google.cloud import storage
 from credentials import refresh_credentials
 
 # MongoDB libs
@@ -24,7 +25,7 @@ import atexit
 from pprint import pprint
 
 from gmail import GmailClassifier, GmailMessage
-from handlers.attachments import SaveLocallyAttachmentHandler
+from handlers.attachments import SaveLocallyAttachmentHandler, AttachmentHandler
 from handlers.messages import MessageHandler
 
 # Load environment variables
@@ -154,7 +155,7 @@ async def run_classfiers(
                 service,
                 after=(
                     pendulum.now()
-                    .subtract(months=2)
+                    .subtract(months=6)
                     .int_timestamp
                     # pendulum.instance(
                     #     classfier_db["lastExecution"]).int_timestamp
@@ -180,6 +181,9 @@ async def main():
     # Gmail credentials
     service = refresh_credentials(os.environ.get("GMAIL_CREDENTIALS_PATH"))
     logger.info("Connected to Gmail API")
+    
+    cloud_storage_client = storage.Client()
+    bucket = cloud_storage_client.get_bucket(os.getenv("BUCKET_NAME"))
 
     # MongoDB connection
     client = MongoClient(os.getenv("CONNECTION_STRING"))
@@ -205,8 +209,12 @@ async def main():
         GmailClassifier(
             'FaturaNubank',
             'subject:"A fatura do seu cartão Nubank está fechada"',
-            MessageHandler(service, "me").manage_labels(
-                [labels['Nubank/Fatura Nubank']]).execute,
+            MessageHandler(service, "me")
+                .get_content('full')
+                .download_attachments(
+                    lambda x: AttachmentHandler().write_on_cloud_storage(bucket, x, 'Faturas/Nubank'))
+                .manage_labels([labels['Nubank/Fatura Nubank']])
+                .execute
         ),
         GmailClassifier(
             "Clickbus",
@@ -237,7 +245,7 @@ async def main():
                 .manage_labels([labels['Fatura Inter']])
                 .save_to_json('messages/FaturaInter')
                 .download_attachments(
-                    SaveLocallyAttachmentHandler('attachments/FaturaInter').execute)
+                    lambda x: AttachmentHandler().write_on_cloud_storage(bucket, x, 'Faturas/Inter'))
                 .execute,
         ),
         GmailClassifier(
