@@ -1,6 +1,7 @@
 from pathlib import Path
 from pendulum import DateTime
-
+from google.cloud import storage
+from typing import Self
 
 class BaseAttachmentHandler:
     def __init__(self) -> None:
@@ -53,3 +54,36 @@ class SaveLocallyAttachmentHandler (BaseAttachmentHandler):
                 f"File {file_path.as_posix()} already exists")
 
         file_path.write_bytes(attachment['data'])
+
+
+class AttachmentHandler:
+    def __init__(self) -> None:
+        self._execution_plan = []
+    
+    def write_on_cloud_storage(self, bucket: storage.Bucket, attachment: dict, path: str = '') -> Self:
+        write_attachment_on_cloud_storage(bucket, attachment, path)
+    
+    def execute(self, attachment: dict) -> None:
+        ...
+    
+
+def write_attachment_on_cloud_storage(bucket: storage.Bucket, attachment: dict, path: str = '') -> None:
+    """Write an attachment on a cloud storage bucket.
+
+    Args:
+        bucket (Bucket): Google Cloud Bucket.
+        attachment (dict): Attachment dictionary. Must have the following keys:
+            - filename (str): The name of the file.
+            - date (pendulum.DateTime): The date when the attachment was sent.
+            - data (bytes): The attachment data.
+    """
+    if not bucket.exists():
+        raise ValueError(f"Couldn't save attachment {attachment['filename']}. Bucket {bucket.name} doesn't exist")
+    
+    if path.endswith('/'):
+        raise ValueError(f"Path {path} must not end with '/'")
+    
+    filename, extension = attachment['filename'].split('.')
+    complete_filename = f'{attachment['date'].to_date_string()}-{filename}.{extension}'
+    blob = bucket.blob(path + '/' + complete_filename)
+    blob.upload_from_string(attachment['data'])
