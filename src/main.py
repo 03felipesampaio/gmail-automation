@@ -23,9 +23,13 @@ import os
 from pathlib import Path
 import json
 import atexit
+import functools
 from pprint import pprint
 
-from gmail import GmailClassifier
+from gmail import GmailClassifier, GmailMessage
+import gmail
+import pubsub
+import database
 
 
 # Load environment variables
@@ -96,16 +100,62 @@ async def run_classfiers(
             )
 
 
-def new_message_callback(message: pubsub_v1.subscriber.message.Message) -> None:
-    """Calback function to handle new messages from Pub/Sub.
+def get_new_messages_ids_from_history(history_response: dict, history_collection: Collection, userId: str) -> list[str]:
+    messages = []
+    
+    if "history" not in history_response:
+        return messages
+    
+    for history_item in history_response["history"]:
+        if "messagesAdded" not in history_item:
+            continue
+        
+        for message in history_item["messages"]:
+            database.insert_last_history_id(history_collection, userId, history_item["id"])
+            messages.append(message["id"])
+    
+    return messages
+
+
+
+def sync_since_last_execution(history_collection: Collection, service: Resource, userId: str) -> list[str]:
+    """Syncs all new messages from last execution.
 
     Args:
-        message (PubSub message): New message from Pub/Sub.
+        history_collection (Collection): MongoDB collection to read/write historyIds
+        service (Resource): Gmail service
+        userId (str): Gmail user ID
+
+    Raises:
+        NotImplementedError: _description_
+
+    Returns:
+        list[str]: List of new messages IDs
     """
-    # print(type(message))
-    print(f"Received message:")
-    pprint(message.data.decode("utf-8"))
-    message.ack()
+    history_id = database.get_last_history_id(history_collection, userId)
+    logger.info(f"Syncing messages since last execution. Start historyID: {history_id}")
+    watcher = pubsub.start_gmail_publisher(GMAIL_SERVICE, userId, os.getenv("PUBSUB_TOPIC"))
+
+    
+    if not history_id:
+        raise NotImplementedError("Trying to sync since last execution without a last historyId. Implement a batch function here")
+    
+    history_res = gmail.get_history(service, userId, history_id)    
+    new_messages = get_new_messages_ids_from_history(history_res, history_collection, userId)
+    
+    for new_message in new_messages:
+        # Handle messages
+        ...
+
+    database.insert_last_history_id(MONGO_DATABASE["historyIds"], "me", watcher["historyId"])
+
+    logger.info(f"Synced {len(new_messages)} new messages since last execution")
+
+    return new_messages
+
+
+
+
 
 if __name__ == "__main__":
     start = pendulum.now()
@@ -113,28 +163,17 @@ if __name__ == "__main__":
     logger.info("Starting Gmail Automation execution")
 
     # First we run the classfiers in batch from the last execution date
-    asyncio.run(run_classfiers(USER_CLASSFIERS,
-                GMAIL_SERVICE, MONGO_DATABASE["classifiers"]))
+    # asyncio.run(run_classfiers(USER_CLASSFIERS,
+    #             GMAIL_SERVICE, MONGO_DATABASE["classifiers"]))
 
     # After that, we setup the Pub/Sub topic to watch for new messages
-    watcher = GMAIL_SERVICE.users().watch(userId="me", body={
-        "topicName": os.getenv("PUBSUB_TOPIC")
-    }).execute()
-    
-    # pprint(watcher)
+    new_messages_ids = sync_since_last_execution(MONGO_DATABASE["historyIds"], GMAIL_SERVICE, "me")
 
     # Now, starts to watch for new messages
 
     with pubsub_v1.SubscriberClient() as subscriber:
-        future = subscriber.subscribe(subscription=os.getenv("PUBSUB_SUBSCRIPTION"), callback=new_message_callback)
-        
-        # FIXME This should stop with CTRL+C. But it's not working (I followed Google's documentation BTW)
-        # try:
-        #     future.result()
-        # except KeyboardInterrupt:
-        #     print("Shutting down...")
-        #     future.cancel()
-
+        future = subscriber.subscribe(subscription=os.getenv("PUBSUB_SUBSCRIPTION"), callback=functools.partial(pubsub.new_message_callback, MONGO_DATABASE["historyIds"], GMAIL_SERVICE, "me"))
+ 
         # Works for now
         try:
             logger.info("Listening for new messages...")
@@ -143,7 +182,7 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             logger.warning('Shutting down...')
 
-
+    logger.info("Closing connections")
     GMAIL_SERVICE.users().stop(userId="me").execute()
     GMAIL_SERVICE.close()
     MONGO_DATABASE.client.close()
