@@ -1,10 +1,11 @@
 # Gmail API Documentation by Google => https://googleapis.github.io/google-api-python-client/docs/dyn/gmail_v1
 from googleapiclient.discovery import Resource
-from google.cloud import storage
-from credentials import refresh_credentials
+from google.cloud import pubsub_v1
+
+# TODO Move all this credentials logic to a separated file
+from classfiers import USER_CLASSFIERS, GMAIL_SERVICE, MONGO_DATABASE, CLOUD_STORAGE_CLIENT
 
 # MongoDB libs
-from pymongo import MongoClient
 from pymongo.collection import Collection
 
 # Date and time libs
@@ -15,18 +16,21 @@ import asyncio
 
 # Environment variables
 from dotenv import load_dotenv
-import os
 
 # Logging
 import logging.config
+import os
 from pathlib import Path
 import json
 import atexit
+import functools
 from pprint import pprint
 
 from gmail import GmailClassifier, GmailMessage
-from handlers.attachments import AttachmentHandler
-from handlers.messages import MessageHandler
+import gmail
+import pubsub
+import database
+
 
 # Load environment variables
 load_dotenv(".env")
@@ -45,81 +49,6 @@ def setup_logging():
     if queue_handler is not None:
         queue_handler.listener.start()
         atexit.register(queue_handler.listener.stop)
-
-
-def setup_labels(service: Resource, user_labels: dict, userId="me") -> dict:
-    """Creates user defined labels on Gmail API and returns all labels.
-
-    Args:
-        service (Resource): Gmail API service
-        user_labels (dict): User defined labels
-        userId (str, optional): Gmail User ID. Defaults to 'me'.
-    """
-    # Getting all labels from Gmail API
-    labels = service.users().labels().list(
-        userId=userId).execute().get("labels", [])
-
-    # Getting all labels names from Gmail API
-    labels_names = [x["name"] for x in labels]
-
-    # Creating user defined labels on Gmail API
-    for label in user_labels:
-        if label['name'] not in labels_names:
-            logger.info(f"Creating label '{label['name']}' on Gmail API")
-            service.users().labels().create(userId=userId, body=label).execute()
-
-    # Queries all labels from Gmail API again
-    return service.users().labels().list(userId=userId).execute().get("labels", [])
-
-
-def get_label_by_name(
-    name: str, service: Resource, label_collection: Collection, userId="me"
-) -> dict:
-    """Gets a label by name. If the label doesn't exist on Gmail API, but exists in database, it will be created.
-
-    Gmail API is the source of truth, so it will be queried first. If the label is not found, it will be queried on the database.
-
-    Args:
-        name (str): Label name
-        service (Resource): Gmail API service
-        label_collection (Collection): MongoDB collection
-        userId (str, optional): Gmail User ID. Defaults to 'me'.
-
-    Returns:
-        dict: Label object
-
-    Raises:
-        ValueError: If label not found neither on Gmail API nor on database
-    """
-    label = next(
-        (
-            x
-            for x in service.users()
-            .labels()
-            .list(userId=userId)
-            .execute()
-            .get("labels", [])
-            if x["name"] == name
-        ),
-        None,
-    )
-
-    db_label = None
-
-    # If label not found on Gmail API, we should query on database
-    if not label:
-        db_label = label_collection.find_one({"name": name})
-        if not db_label:
-            raise ValueError(
-                f"Label {
-                    name} not found, please create it on database or Gmail API"
-            )
-        db_label.pop("_id")
-        # Label was found on database and not in Gmail API, so we should create it
-        # Creating label on Gmail API
-        label = service.users().labels().create(userId=userId, body=db_label).execute()
-
-    return label
 
 
 async def run_classfiers(
@@ -155,7 +84,7 @@ async def run_classfiers(
                 service,
                 after=(
                     pendulum.now()
-                    .subtract(months=2)
+                    .subtract(months=1)
                     .int_timestamp
                     # pendulum.instance(
                     #     classfier_db["lastExecution"]).int_timestamp
@@ -171,100 +100,96 @@ async def run_classfiers(
             )
 
 
-async def main():
-    setup_logging()
+def get_new_messages_ids_from_history(history_response: dict, history_collection: Collection, userId: str) -> list[str]:
+    messages = []
+    
+    if "history" not in history_response:
+        return messages
+    
+    for history_item in history_response["history"]:
+        if "messagesAdded" not in history_item:
+            continue
+        
+        for message in history_item["messages"]:
+            database.insert_last_history_id(history_collection, userId, history_item["id"])
+            messages.append(message["id"])
+    
+    return messages
 
+
+
+def sync_since_last_execution(history_collection: Collection, service: Resource, userId: str) -> list[str]:
+    """Syncs all new messages from last execution.
+
+    Args:
+        history_collection (Collection): MongoDB collection to read/write historyIds
+        service (Resource): Gmail service
+        userId (str): Gmail user ID
+
+    Raises:
+        NotImplementedError: _description_
+
+    Returns:
+        list[str]: List of new messages IDs
+    """
+    history_id = database.get_last_history_id(history_collection, userId)
+    logger.info(f"Syncing messages since last execution. Start historyID: {history_id}")
+    watcher = pubsub.start_gmail_publisher(GMAIL_SERVICE, userId, os.getenv("PUBSUB_TOPIC"))
+
+    
+    if not history_id:
+        raise NotImplementedError("Trying to sync since last execution without a last historyId. Implement a batch function here")
+    
+    history_res = gmail.get_history(service, userId, history_id)    
+    new_messages = get_new_messages_ids_from_history(history_res, history_collection, userId)
+    
+    for new_message in new_messages:
+        # Handle messages
+        ...
+
+    database.insert_last_history_id(MONGO_DATABASE["historyIds"], "me", watcher["historyId"])
+
+    logger.info(f"Synced {len(new_messages)} new messages since last execution")
+
+    return new_messages
+
+
+
+
+
+if __name__ == "__main__":
     start = pendulum.now()
+    setup_logging()
     logger.info("Starting Gmail Automation execution")
 
-    # Getting credentials and connections
-    # Gmail credentials
-    service = refresh_credentials(os.environ.get("GMAIL_CREDENTIALS_PATH"))
-    logger.info("Connected to Gmail API")
-    
-    cloud_storage_client = storage.Client()
-    bucket = cloud_storage_client.get_bucket(os.getenv("BUCKET_NAME"))
+    # First we run the classfiers in batch from the last execution date
+    # asyncio.run(run_classfiers(USER_CLASSFIERS,
+    #             GMAIL_SERVICE, MONGO_DATABASE["classifiers"]))
 
-    # MongoDB connection
-    client = MongoClient(os.getenv("CONNECTION_STRING"))
-    logger.info("Connected to MongoDB")
-    db = client["GmailAutomation"]
+    # After that, we setup the Pub/Sub topic to watch for new messages
+    new_messages_ids = sync_since_last_execution(MONGO_DATABASE["historyIds"], GMAIL_SERVICE, "me")
 
-    # TODO What if we create a function that returns a dict with name and id?
-    # This function must execute in a setup phase
-    # We don't expect to receive new labels during runtime, so it should be safe to do it
-    user_labels = list(db["labels"].find())
-    for label in user_labels:
-        label.pop("_id")
+    # Now, starts to watch for new messages
 
-    labels = {l['name']: l['id'] for l in setup_labels(service, user_labels)}
+    with pubsub_v1.SubscriberClient() as subscriber:
+        future = subscriber.subscribe(subscription=os.getenv("PUBSUB_SUBSCRIPTION"), callback=functools.partial(pubsub.new_message_callback, MONGO_DATABASE["historyIds"], GMAIL_SERVICE, "me"))
+ 
+        # Works for now
+        try:
+            logger.info("Listening for new messages...")
+            while True: 
+                continue
+        except KeyboardInterrupt:
+            logger.warning('Shutting down...')
 
-    classifiers = [
-        GmailClassifier(
-            "Nubank",
-            "from:Nubank",
-            MessageHandler(service, "me").get_content('full').manage_labels(
-                [labels['Nubank']]).save_to_json('messages/nubank').execute,
-        ),
-        GmailClassifier(
-            'FaturaNubank',
-            'subject:"A fatura do seu cartão Nubank está fechada"',
-            MessageHandler(service, "me")
-                .get_content('full')
-                .download_attachments(
-                    lambda x: AttachmentHandler().write_on_cloud_storage(bucket, x, 'Faturas/Nubank'))
-                .manage_labels([labels['Nubank/Fatura Nubank']])
-                .execute
-        ),
-        GmailClassifier(
-            "Clickbus",
-            'from:Clickbus subject:"Pedido AROUND 2 confirmado"',
-            MessageHandler(service, "me").manage_labels(
-                [labels['Clickbus']]).execute,
-        ),
-        GmailClassifier(
-            "ClickbusPedidos",
-            'from:"Clickbus" subject:("Oba! Sua viagem está confirmada!" OR "Pedido")',
-            MessageHandler(service, "me").manage_labels(
-                [labels['Clickbus/Pedidos']]).execute,
-        ),
-        GmailClassifier(
-            'InternetClaro',
-            'from:"Fatura Claro"',
-            MessageHandler(service, "me")
-                .get_content('full')
-                .manage_labels([labels['Internet Claro']])
-                .download_attachments(AttachmentHandler().save_locally('attachments/Claro').execute)
-                .execute
-        ),
-        GmailClassifier(
-            'FaturaInter',
-            'subject:"Fatura Cartão Inter"',
-            MessageHandler(service, "me")
-                .get_content('full')
-                .manage_labels([labels['Fatura Inter']])
-                .download_attachments(
-                    AttachmentHandler().write_on_cloud_storage(bucket, 'Faturas/Inter').execute)
-                .execute,
-        ),
-        GmailClassifier(
-            'Preply',
-            'from:Preply',
-            MessageHandler(service, "me")
-                .manage_labels([labels['Preply']])
-                .execute
-        )
-    ]
-
-    await run_classfiers(classifiers, service, db["classifiers"])
+    logger.info("Closing connections")
+    GMAIL_SERVICE.users().stop(userId="me").execute()
+    GMAIL_SERVICE.close()
+    MONGO_DATABASE.client.close()
+    CLOUD_STORAGE_CLIENT.close()
     
     end = pendulum.now()
     logger.info(
         f"Ending Gmail Automation execution. Execution time: {
             end.diff(start).in_seconds()} seconds"
     )
-    service.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

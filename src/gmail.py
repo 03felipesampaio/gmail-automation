@@ -8,6 +8,7 @@ from pathlib import Path
 import base64
 
 import asyncio
+from pymongo.collection import Collection
 
 # Logger was initialized in the main.py file
 logger = logging.getLogger("gmail_automation")
@@ -161,3 +162,14 @@ class GmailClassifier:
         )
 
         return messages
+
+
+def get_history(service: Resource, userId: str, startHistoryId: str) -> dict:
+    req = service.users().history().list(userId="me", startHistoryId=startHistoryId)
+    res = req.execute()
+    
+    if 'nextPageToken' in res:
+        logger.warning('Found more than one page in history. This is not expected.')
+        
+    return res
+
