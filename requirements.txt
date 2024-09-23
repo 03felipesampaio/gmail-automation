@@ -9,10 +9,14 @@ google-auth==2.32.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
 google-cloud-core==2.4.1
+google-cloud-pubsub==2.23.1
 google-cloud-storage==2.18.2
 google-crc32c==1.5.0
 google-resumable-media==2.7.2
 googleapis-common-protos==1.63.2
+grpc-google-iam-v1==0.13.1
+grpcio==1.66.1
+grpcio-status==1.66.1
 httplib2==0.22.0
 idna==3.7
 iniconfig==2.0.0
