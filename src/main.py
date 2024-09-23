@@ -83,13 +83,13 @@ async def run_classfiers(
             messages = tg.create_task(classifier.classify(
                 service,
                 after=(
-                    pendulum.now()
-                    .subtract(months=1)
-                    .int_timestamp
-                    # pendulum.instance(
-                    #     classfier_db["lastExecution"]).int_timestamp
-                    # if classfier_db["lastExecution"]
-                    # else None
+                    # pendulum.now()
+                    # .subtract(months=1)
+                    # .int_timestamp
+                    pendulum.instance(
+                        classfier_db["lastExecution"]).int_timestamp
+                    if classfier_db["lastExecution"]
+                    else None
                 ),
             ))
 
@@ -115,7 +115,6 @@ def get_new_messages_ids_from_history(history_response: dict, history_collection
             messages.append(message["id"])
     
     return messages
-
 
 
 def sync_since_last_execution(history_collection: Collection, service: Resource, userId: str) -> list[str]:
@@ -154,36 +153,33 @@ def sync_since_last_execution(history_collection: Collection, service: Resource,
     return new_messages
 
 
-
-
-
 if __name__ == "__main__":
     start = pendulum.now()
     setup_logging()
     logger.info("Starting Gmail Automation execution")
 
     # First we run the classfiers in batch from the last execution date
-    # asyncio.run(run_classfiers(USER_CLASSFIERS,
-    #             GMAIL_SERVICE, MONGO_DATABASE["classifiers"]))
+    asyncio.run(run_classfiers(USER_CLASSFIERS,
+                GMAIL_SERVICE, MONGO_DATABASE["classifiers"]))
 
     # After that, we setup the Pub/Sub topic to watch for new messages
-    new_messages_ids = sync_since_last_execution(MONGO_DATABASE["historyIds"], GMAIL_SERVICE, "me")
+    # new_messages_ids = sync_since_last_execution(MONGO_DATABASE["historyIds"], GMAIL_SERVICE, "me")
 
-    # Now, starts to watch for new messages
+    # # Now, starts to watch for new messages
 
-    with pubsub_v1.SubscriberClient() as subscriber:
-        future = subscriber.subscribe(subscription=os.getenv("PUBSUB_SUBSCRIPTION"), callback=functools.partial(pubsub.new_message_callback, MONGO_DATABASE["historyIds"], GMAIL_SERVICE, "me"))
+    # with pubsub_v1.SubscriberClient() as subscriber:
+    #     future = subscriber.subscribe(subscription=os.getenv("PUBSUB_SUBSCRIPTION"), callback=functools.partial(pubsub.new_message_callback, MONGO_DATABASE["historyIds"], GMAIL_SERVICE, "me"))
  
-        # Works for now
-        try:
-            logger.info("Listening for new messages...")
-            while True: 
-                continue
-        except KeyboardInterrupt:
-            logger.warning('Shutting down...')
+    #     # Works for now
+    #     try:
+    #         logger.info("Listening for new messages...")
+    #         while True: 
+    #             continue
+    #     except KeyboardInterrupt:
+    #         logger.warning('Shutting down...')
 
-    logger.info("Closing connections")
-    GMAIL_SERVICE.users().stop(userId="me").execute()
+    # logger.info("Closing connections")
+    # GMAIL_SERVICE.users().stop(userId="me").execute()
     GMAIL_SERVICE.close()
     MONGO_DATABASE.client.close()
     CLOUD_STORAGE_CLIENT.close()

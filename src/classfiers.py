@@ -125,5 +125,10 @@ USER_CLASSFIERS = [
         MessageHandler(GMAIL_SERVICE, "me")
             .manage_labels([labels['Preply']])
             .execute
+    ),
+    GmailClassifier(
+        'UberRecibos',
+        'from:(Recibos da Uber)',
+        MessageHandler(GMAIL_SERVICE, 'me').manage_labels([labels['Uber/Recibos']]).execute
     )
 ]
