@@ -10,6 +10,7 @@ import json
 from pprint import pprint
 
 import logging
+import functools
 
 logger = logging.getLogger('gmail_automation')
 
@@ -58,21 +59,21 @@ class MessageHandler:
     def get_content(self, format: Literal['minimal', 'full', 'raw', 'metadata'] = 'full') -> Self:
         """Fetch messages content.
         """
+        def update_message(message: GmailMessage, req_id, res, exc):
+            if exc is not None:
+                raise exc
+            message.update(**res)
+
         def handler(service, userId, messages):
-            batch_req = service.new_batch_http_request()
+            CHUNK_SIZE = 100
+            for messages_chunk in [messages[i:i+CHUNK_SIZE] for i in range(0, len(messages), CHUNK_SIZE)]:
+                batch_req = service.new_batch_http_request()
 
-            def update_message(message) -> Callable[[str, dict, HttpError], None]:
-                def callback(req_id, res, exc):
-                    if exc is not None:
-                        raise exc
-                    message.update(**res)
-                return callback
+                for message in messages_chunk:
+                    batch_req.add(service.users().messages().get(
+                        userId=userId, id=message.id, format=format), callback=functools.partial(update_message, message))
 
-            for message in messages:
-                batch_req.add(service.users().messages().get(
-                    userId=userId, id=message.id, format=format), callback=update_message(message))
-
-            batch_req.execute()
+                batch_req.execute()
 
         self._add_to_execution_plan(handler)
 
