@@ -63,6 +63,9 @@ class GmailMessage:
             fp.write(json.dumps(self.__dict__, indent=4, ensure_ascii=False))
 
         return self
+    
+    def to_dict(self) -> dict:
+        return self.__dict__
 
     def __repr__(self) -> str:
         return f"<GmailMessage id={self.id}>"
