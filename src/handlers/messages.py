@@ -3,6 +3,7 @@ from pathlib import Path
 from gmail import GmailMessage
 from googleapiclient.discovery import Resource
 from googleapiclient.errors import HttpError
+from google.cloud import storage
 import pendulum
 import base64
 import json
@@ -228,6 +229,22 @@ class MessageHandler:
 
     def forward(self) -> Self:
         raise NotImplementedError('Not implemented yet')
+    
+    def send_to_cloud_storage(self, bucket: storage.Bucket, path: str = '') -> Self:
+        if not bucket.exists():
+            raise ValueError(f"Couldn't save emails. Bucket {bucket.name} doesn't exist")
+
+        if path.endswith('/'):
+            raise ValueError(f"Path {path} must not end with '/'")
+        
+        def handler(service, userId, messages: GmailMessage):
+            for message in messages:
+                blob = bucket.blob(path+'/'+f'{message.id}.json')
+                blob.upload_from_string(json.dumps(message.to_dict(), indent=4, ensure_ascii=False))
+
+        self._add_to_execution_plan(handler)
+
+        return self
 
     def execute(self, messages: list[GmailMessage]) -> None:
         """Creates a execution plan for handling all matched messages.
