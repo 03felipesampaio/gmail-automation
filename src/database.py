@@ -1,66 +1,53 @@
-from pymongo.collection import Collection
 import pendulum
 import logging
 
+import psycopg
+from pathlib import Path
+import os
+
 logger = logging.getLogger("gmail_automation")
+DIR_DATABASE_SCRIPTS = Path( os.getenv("DIR_DATABASE_SCRIPTS", 'src/database') )
+
+if not DIR_DATABASE_SCRIPTS.exists():
+    logger.error(f"Directory {DIR_DATABASE_SCRIPTS} does not exist")
+    raise ValueError(f"Directory {DIR_DATABASE_SCRIPTS} does not exist")
 
 
-def insert_last_history_id(history_collection: Collection, userId: str, history_id: str) -> None:
-    """Inserts the last historyId in the database.
-
+async def init_database(postgres_url: str) -> psycopg.AsyncConnection:
+    """"Initializes the database by running the init scripts.
+    
     Args:
-        history_collection (Collection): MongoDB collection.
-        userId (str): User ID.
-        history_id (str): Last historyId.
-    """
-    logger.debug(f"Inserting last historyId {history_id} for user {userId}")
-    history_collection.insert_one(
-        {'date': pendulum.now(), 'historyId': history_id, 'userId': userId})
-
-
-def get_last_history_id(history_collection: Collection, userId: str) -> str | None:
-    """Gets the last historyId from the database.
-
-    Args:
-        history_collection (Collection): MongoDB collection.
-        userId (str): User ID.
-
+        postgres_url (str): Postgres URL with database.
+        
     Returns:
-        str: Last historyId.
+        psycopg.AsyncConnection: Connection to the database.
     """
-    logger.debug(f"Getting last historyId for user {userId}")
-    last_history = history_collection.find_one(
-        {'userId': userId}, sort=[('date', -1)])
+    if not postgres_url:
+        logger.error("Postgres URL not provided")
+        raise ValueError("Postgres URL not provided")
     
-    if last_history is not None:
-        last_history_id = last_history['historyId']
-    else:
-        logger.info(f"No historyId found for user {userId}")
-        last_history_id = None    
+    logger.info(f"Connecting to database {postgres_url}")
     
-    return last_history_id
-
-
-def update_last_history_id(history_collection: Collection, userId: str, history_id: str) -> str:
-    """Updates the last historyId in the database and returns the last one before.
-
-
-    We do that because a new historyId returns a empty value when queried. So,
-    in order to really get the changes between the last historyId and the new one,
-    we must need to query the last historyId before the new one.
-
-    Args:
-        history_collection (Collection): MongoDB collection.
-        userId (str): User ID.
-        history_id (str): Last historyId.
-
-    Returns:
-        str: Last historyId before the new one.
-    """
-    last_history_id = get_last_history_id(history_collection, userId)
-
-    insert_last_history_id(history_collection, userId, history_id)
+    conn = await psycopg.AsyncConnection.connect(postgres_url)
     
-    logger.info(f"Last historyId updated for user {userId}. Old: {last_history_id}, New: {history_id}")
+    logger.info("Sucefully connected to database")
+    
+    init_scripts_dir = DIR_DATABASE_SCRIPTS / 'init'
 
-    return last_history_id
+    for script_file in init_scripts_dir.iterdir():
+        if script_file.suffix != '.sql':
+            continue
+        
+        with script_file.open(encoding='utf8') as file:
+            script_content = file.read()
+            async with conn.cursor() as cursor:
+                try:
+                    await cursor.execute(script_content)
+                except psycopg.Error as e:
+                    logger.error(f"Error running script {script_file.name}: {e}")
+                    await conn.rollback()
+                    raise e
+                
+    await conn.commit()
+    
+    return conn
