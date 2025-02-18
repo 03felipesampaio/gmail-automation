@@ -19,22 +19,22 @@ VALUES
 -- (uuid_generate_v4(), CURRENT_TIMESTAMP, NULL, 'RUNNING'); #}
 
 -- Insert statements for action_templates table
-INSERT INTO "action_templates" ("action_name")
+{# INSERT INTO "action_templates" ("action_name")
 VALUES 
 ('add_label'),
-('mark_as_read');
+('mark_as_read'); #}
 
 -- Insert statements for action_parameter_templates table
-INSERT INTO "action_parameter_templates" ("action_id", "parameter_name", "parameter_type", "parameter_is_nullable", "parameter_default")
+{# INSERT INTO "action_parameter_templates" ("action_id", "parameter_name", "parameter_type", "parameter_is_nullable", "parameter_default")
 VALUES 
 (1, 'label_name', 'VARCHAR', FALSE, 'Inbox'),
-(2, 'read_status', 'BOOLEAN', FALSE, 'TRUE');
+(2, 'read_status', 'BOOLEAN', FALSE, 'TRUE'); #}
 
 -- Insert statements for classifier_actions table
-INSERT INTO "classifier_actions" ("classifier_id", "action_id", "parameters")
+{# INSERT INTO "classifier_actions" ("classifier_id", "action_id", "parameters")
 VALUES 
 (1, 1, '{"label_name": "Spam"}'),
-(2, 2, '{"read_status": true}');
+(2, 2, '{"read_status": true}'); #}
 
 -- Insert statements for classifier_messages_execution table
 -- INSERT INTO "classifier_messages_execution" ("message_id", "classifier_execution_id", "started_at", "finished_at", "status")
