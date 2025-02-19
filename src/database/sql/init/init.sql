@@ -8,6 +8,7 @@ DO $$ BEGIN
             "updated_at" TIMESTAMP(0) WITH TIME ZONE
         );
         ALTER TABLE "classifiers" ADD PRIMARY KEY("classifier_id");
+        ALTER TABLE "classifiers" ADD CONSTRAINT "unique_classifier_name" UNIQUE("classifier_name");
     END IF;
 END $$;
 
