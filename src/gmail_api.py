@@ -178,7 +178,7 @@ logger = logging.getLogger("gmail_automation")
 #     return res
 
 
-def query_messages_by_string(service: Resource, userId: str, query: str) -> dict:
+def query_messages_by_string(service: Resource, userId: str, query: str, maxResults: int = 3) -> dict:
     """Queries messages by a string query.
     
     Args:
@@ -190,14 +190,34 @@ def query_messages_by_string(service: Resource, userId: str, query: str) -> dict
         dict: Query response
     """
     logger.info(f"Querying messages with query: '{query}'")
-    req = service.users().messages().list(userId=userId, q=query)
+    req = service.users().messages().list(userId=userId, q=query, maxResults=maxResults)
     
     res = req.execute()
     
     return res
 
 
-def read_messages_in_batch(service: Resource, userId: str, messages_ids: list[str], format: str, batch_size: int = 10) -> list[dict]:
+def get_message(service: Resource, userId: str, messageId: str, format:str) -> dict:
+    """Get a message by its ID.
+    
+    Args:
+        service (Resource): Gmail API service
+        userId (str): Gmail User ID
+        messageId (str): Message ID
+        format (str): Message format
+    
+    Returns:
+        dict: Message response
+    """
+    logger.info(f"Getting message with ID: '{messageId}'")
+    req = service.users().messages().get(userId=userId, id=messageId, format=format)
+    
+    res = req.execute()
+    
+    return res
+
+
+def read_messages_in_batch(service: Resource, userId: str, messages_ids: list[str], format: str) -> list[dict]:
     messages = []
     
     service.new_batch_http_request()
