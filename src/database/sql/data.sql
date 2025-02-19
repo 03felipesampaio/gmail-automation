@@ -3,8 +3,8 @@ BEGIN;
 -- Insert statements for classifiers table
 INSERT INTO "classifiers" ("classifier_name", "gmail_query")
 VALUES 
-('Spam Filter', 'label:spam'),
-('Important Filter', 'label:important');
+('Nubank', 'from:Nubank'),
+('Uber', 'from:Uber');
 
 -- Insert statements for classifier_executions table
 -- {# INSERT INTO "classifier_executions" ("classifier_execution_id", "execution_id", "classifier_id", "started_at", "finished_at", "status")
