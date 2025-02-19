@@ -4,7 +4,7 @@ import logging
 
 logger = logging.getLogger("gmail_automation")
 
-actions = {}
+defined_actions = {}
 
 
 def parse_parameters(parameters: inspect.Signature) -> list[dict]:
@@ -15,9 +15,12 @@ def parse_parameters(parameters: inspect.Signature) -> list[dict]:
     
     Returns:
         list: Action parameters
-    """
+    """    
     parsed_parameters = []
     for param_name, param in parameters.parameters.items():
+        if param_name == 'message':
+            continue
+        
         parsed_parameter = {
             'parameter_name': param_name,
             'parameter_type': None if param.annotation == inspect.Parameter.empty else param.annotation,
@@ -37,7 +40,11 @@ def define_action(format: str):
     """
 
     def decorator(func: Callable):
-        actions[func.__name__] = {
+        if 'message' not in inspect.signature(func).parameters.keys():
+            raise KeyError("Action must have 'message' parameter.")
+        
+        defined_actions[func.__name__] = {
+            "action": func,
             "action_name": func.__name__,
             "format": format,
             "parameters": parse_parameters(inspect.signature(func)),

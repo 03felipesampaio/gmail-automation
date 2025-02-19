@@ -4,7 +4,7 @@ import json
 
 
 @define_action(format="full")
-def save_to_json(path: str, message: dict, tet, exist_ok:bool|None=True) -> dict:
+def save_to_json(path: str, message: dict) -> dict:
     """Saves Gmail message to a JSON file.
     
     Args:
