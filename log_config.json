@@ -14,7 +14,7 @@
         "stdout": {
             "class": "logging.StreamHandler",
             "stream": "ext://sys.stdout",
-            "formatter": "simple",
+            "formatter": "detailed",
             "level": "INFO"
         },
         "stderr": {
