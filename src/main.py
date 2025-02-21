@@ -42,7 +42,7 @@ import database.connection as connection
 # import database.queries.actions
 import psycopg
 
-from service import executions_service, actions_service
+from service import executions_service, actions_service, classifiers_service
 
 from actions import defined_actions
 import actions.classifier_actions
@@ -338,30 +338,7 @@ async def main():
     await connection.init_database(pool)
     await actions_service.load_actions(pool, defined_actions)
     
-    execution = await executions_service.start_new_execution(pool)
-
-    try:
-    #     async with conn.cursor() as cursor:
-    #         classifiers = await database.queries.classifiers.read_all_classifiers(
-    #             cursor
-    #         )
-
-    #         await run_classifiers(
-    #             pool, execution_id, gmail_resource, "me", classifiers
-    #         )
-
-        execution_status = "SUCCESS"
-    except Exception as e:
-        logger.error(f"Error running main function: {e}")
-        execution_status = "ERROR"
-    finally:
-        await executions_service.finish_execution(pool, execution["execution_id"], execution_status)
-    #     async with conn.cursor() as cursor:
-    #         await database.queries.executions.write_execution_end_status_and_duration(
-    #             cursor, execution_id, execution_status, pendulum.now()
-    #         )
-    #         await conn.commit()
-
+    execution = await executions_service.run_in_batch(pool)
 
 if __name__ == "__main__":
     # pendulum.set_local_timezone('UTC')
