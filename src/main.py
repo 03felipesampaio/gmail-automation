@@ -32,15 +32,17 @@ import psycopg_pool
 import gmail_api
 import credentials
 import database.connection as connection
-import database.queries
+# import database.queries
 
-import database.queries.executions
-import database.queries.classifiers
-import database.queries.classifier_executions
-import database.queries.classifier_message_execution
-import database.queries.classifier_actions
-import database.queries.actions
+# import database.queries.executions
+# import database.queries.classifiers
+# import database.queries.classifier_executions
+# import database.queries.classifier_message_execution
+# import database.queries.classifier_actions
+# import database.queries.actions
 import psycopg
+
+from service import executions_service, actions_service
 
 from actions import defined_actions
 import actions.classifier_actions
@@ -146,185 +148,184 @@ def setup_logging():
 
 #     return new_messages
 
+# async def load_actions(conn: psycopg.AsyncConnection, actions: dict) -> None:
+#     """Load actions to the database.
 
-async def load_actions(conn: psycopg.AsyncConnection, actions: dict) -> None:
-    """Load actions to the database.
+#     Args:
+#         conn (psycopg.AsyncConnection): Database connection
+#         actions (dict): Dictionary of actions
 
-    Args:
-        conn (psycopg.AsyncConnection): Database connection
-        actions (dict): Dictionary of actions
-
-    Returns:
-        None
-    """
-    for action in actions.values():
-        async with conn.cursor() as cursor:
-            inserted_action = await database.queries.actions.add_action(cursor, action)
-            inserted_parameters = await database.queries.actions.add_action_parameters(
-                cursor, action["action_name"], action["parameters"]
-            )
-        await conn.commit()
-
-
-def get_classifier_execution_status_from_messages(
-    messages_executions: list[dict],
-) -> str:
-    """Get the status of the classifier execution based on the status of the messages executions.
-
-    Args:
-        messages_executions (list[dict]): List of message executions
-
-    Returns:
-        str: The status of the classifier execution
-    """
-    all_status = [message["status"] for message in messages_executions]
-
-    if all(status == "SUCCESS" for status in all_status):
-        return "SUCCESS"
-    elif all(status == "ERROR" for status in all_status):
-        return "ERROR"
-    else:
-        return "PARTIAL_SUCCESS"
+#     Returns:
+#         None
+#     """
+#     for action in actions.values():
+#         async with conn.cursor() as cursor:
+#             inserted_action = await database.queries.actions.add_action(cursor, action)
+#             inserted_parameters = await database.queries.actions.add_action_parameters(
+#                 cursor, action["action_name"], action["parameters"]
+#             )
+#         await conn.commit()
 
 
-async def execute_message(
-    cursor: psycopg.AsyncCursor,
-    message: dict,
-    classifier_execution: dict,
-    callback: Callable[[dict], Any],
-) -> dict:
-    """Execute a message and update the database with the result.
+# def get_classifier_execution_status_from_messages(
+#     messages_executions: list[dict],
+# ) -> str:
+#     """Get the status of the classifier execution based on the status of the messages executions.
 
-    WARNING: This function can't raise exceptions, it must return the status of the execution, even if it fails.
-    """
-    message_execution = (
-        await database.queries.classifier_message_execution.start_message_new_execution(
-            cursor, message["id"], classifier_execution
-        )
-    )
+#     Args:
+#         messages_executions (list[dict]): List of message executions
 
-    try:
-        # Process message
-        callback(message)
-        status = "SUCCESS"
-    except Exception as e:
-        logger.error(f"Error processing message {message['id']}: {e}")
-        status = "ERROR"
-    finally:
-        message_execution_finished = await database.queries.classifier_message_execution.finish_message_execution(
-            cursor, message_execution, status
-        )
+#     Returns:
+#         str: The status of the classifier execution
+#     """
+#     all_status = [message["status"] for message in messages_executions]
 
-    return message_execution_finished
+#     if all(status == "SUCCESS" for status in all_status):
+#         return "SUCCESS"
+#     elif all(status == "ERROR" for status in all_status):
+#         return "ERROR"
+#     else:
+#         return "PARTIAL_SUCCESS"
 
 
-async def execute_classifier(
-    conn: psycopg.AsyncConnection,
-    classifier: dict,
-    execution_id: uuid.UUID,
-    service: Resource,
-    userId: str,
-) -> None:
-    # Query gmail service
-    logger.info(
-        f"Executing classifier: Id={classifier['classifier_id']} Name={classifier['classifier_name']}"
-    )
+# async def execute_message(
+#     cursor: psycopg.AsyncCursor,
+#     message: dict,
+#     classifier_execution: dict,
+#     callback: Callable[[dict], Any],
+# ) -> dict:
+#     """Execute a message and update the database with the result.
 
-    async with conn.cursor() as cursor:
-        classifier_execution = (
-            await (
-                database.queries.classifier_executions.start_classifier_new_execution(
-                    cursor,
-                    execution_id,
-                    classifier["classifier_id"],
-                )
-            )
-        )
+#     WARNING: This function can't raise exceptions, it must return the status of the execution, even if it fails.
+#     """
+#     message_execution = (
+#         await database.queries.classifier_message_execution.start_message_new_execution(
+#             cursor, message["id"], classifier_execution
+#         )
+#     )
 
-        await conn.commit()
+#     try:
+#         # Process message
+#         callback(message)
+#         status = "SUCCESS"
+#     except Exception as e:
+#         logger.error(f"Error processing message {message['id']}: {e}")
+#         status = "ERROR"
+#     finally:
+#         message_execution_finished = await database.queries.classifier_message_execution.finish_message_execution(
+#             cursor, message_execution, status
+#         )
 
-    try:
-        async with conn.cursor() as cursor:
-            classifier_actions = (
-                await database.queries.classifier_actions.get_classifier_actions(
-                    cursor, classifier["classifier_id"]
-                )
-            )
-
-        messages_format = actions.classifier_actions.get_message_format_for_classifier(
-            [action["format"] for action in classifier_actions]
-        )
-        callback_function = actions.classifier_actions.build_classifier_action_handler(
-            classifier_actions
-        )
-
-        messages_ids = gmail_api.query_messages_by_string(
-            service, userId, classifier["gmail_query"]
-        )
-
-        if "nextPageToken" in messages_ids:
-            logger.warning(
-                f"Query for classifier {classifier['classifier_name']} has more than a page. This is not supported yet."
-            )
-
-        async with conn.cursor() as cursor:
-            message_executions = [
-                await execute_message(
-                    cursor,
-                    gmail_api.get_message(
-                        service, userId, message["id"], messages_format
-                    ),
-                    classifier_execution,
-                    callback_function,
-                )
-                for message in messages_ids["messages"]
-            ]
-        await conn.commit()
-
-        status_execution = get_classifier_execution_status_from_messages(
-            message_executions
-        )
-
-    except Exception as e:
-        logger.error(
-            f"Error querying messages for classifier {classifier['classifier_name']}: {e}"
-        )
-        status_execution = "ERROR"
-    finally:
-        async with conn.cursor() as cursor:
-            classifier_execution_updated = await database.queries.classifier_executions.finish_classifier_execution(
-                cursor,
-                classifier_execution["classifier_execution_id"],
-                status_execution,
-            )
-        await conn.commit()
-
-    logger.info(
-        f"Finished execution: Classifier ID: {classifier['classifier_id']} Name: {classifier['classifier_name']}"
-    )
-    return classifier_execution_updated
+#     return message_execution_finished
 
 
-async def run_classifiers(
-    pool: psycopg_pool.AsyncConnectionPool,
-    execution_id: uuid.UUID,
-    service: Resource,
-    userId: str,
-    classifiers: list[dict],
-) -> None:
-    async with asyncio.TaskGroup() as tg:
-        for classifier in classifiers:
-            async with pool.connection() as conn:
-                try:
-                    tg.create_task(
-                        execute_classifier(
-                            conn, classifier, execution_id, service, userId
-                        )
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error running classifier {classifier['classifier_name']}: {e}"
-                    )
+# async def execute_classifier(
+#     conn: psycopg.AsyncConnection,
+#     classifier: dict,
+#     execution_id: uuid.UUID,
+#     service: Resource,
+#     userId: str,
+# ) -> None:
+#     # Query gmail service
+#     logger.info(
+#         f"Executing classifier: Id={classifier['classifier_id']} Name={classifier['classifier_name']}"
+#     )
+
+#     async with conn.cursor() as cursor:
+#         classifier_execution = (
+#             await (
+#                 database.queries.classifier_executions.start_classifier_new_execution(
+#                     cursor,
+#                     execution_id,
+#                     classifier["classifier_id"],
+#                 )
+#             )
+#         )
+
+#         await conn.commit()
+
+#     try:
+#         async with conn.cursor() as cursor:
+#             classifier_actions = (
+#                 await database.queries.classifier_actions.get_classifier_actions(
+#                     cursor, classifier["classifier_id"]
+#                 )
+#             )
+
+#         messages_format = actions.classifier_actions.get_message_format_for_classifier(
+#             [action["format"] for action in classifier_actions]
+#         )
+#         callback_function = actions.classifier_actions.build_classifier_action_handler(
+#             classifier_actions
+#         )
+
+#         messages_ids = gmail_api.query_messages_by_string(
+#             service, userId, classifier["gmail_query"]
+#         )
+
+#         if "nextPageToken" in messages_ids:
+#             logger.warning(
+#                 f"Query for classifier {classifier['classifier_name']} has more than a page. This is not supported yet."
+#             )
+
+#         async with conn.cursor() as cursor:
+#             message_executions = [
+#                 await execute_message(
+#                     cursor,
+#                     gmail_api.get_message(
+#                         service, userId, message["id"], messages_format
+#                     ),
+#                     classifier_execution,
+#                     callback_function,
+#                 )
+#                 for message in messages_ids["messages"]
+#             ]
+#         await conn.commit()
+
+#         status_execution = get_classifier_execution_status_from_messages(
+#             message_executions
+#         )
+
+#     except Exception as e:
+#         logger.error(
+#             f"Error querying messages for classifier {classifier['classifier_name']}: {e}"
+#         )
+#         status_execution = "ERROR"
+#     finally:
+#         async with conn.cursor() as cursor:
+#             classifier_execution_updated = await database.queries.classifier_executions.finish_classifier_execution(
+#                 cursor,
+#                 classifier_execution["classifier_execution_id"],
+#                 status_execution,
+#             )
+#         await conn.commit()
+
+#     logger.info(
+#         f"Finished execution: Classifier ID: {classifier['classifier_id']} Name: {classifier['classifier_name']}"
+#     )
+#     return classifier_execution_updated
+
+
+# async def run_classifiers(
+#     pool: psycopg_pool.AsyncConnectionPool,
+#     execution_id: uuid.UUID,
+#     service: Resource,
+#     userId: str,
+#     classifiers: list[dict],
+# ) -> None:
+#     async with asyncio.TaskGroup() as tg:
+#         for classifier in classifiers:
+#             async with pool.connection() as conn:
+#                 try:
+#                     tg.create_task(
+#                         execute_classifier(
+#                             conn, classifier, execution_id, service, userId
+#                         )
+#                     )
+#                 except Exception as e:
+#                     logger.error(
+#                         f"Error running classifier {classifier['classifier_name']}: {e}"
+#                     )
 
 
 async def main():
@@ -334,37 +335,32 @@ async def main():
     )
 
     pool = await connection.connect_to_database(os.environ["POSTGRES_URL"])
+    await connection.init_database(pool)
+    await actions_service.load_actions(pool, defined_actions)
+    
+    execution = await executions_service.start_new_execution(pool)
 
-    async with pool.connection() as conn:
-        await connection.init_database(conn)
-        await load_actions(conn, defined_actions)
+    try:
+    #     async with conn.cursor() as cursor:
+    #         classifiers = await database.queries.classifiers.read_all_classifiers(
+    #             cursor
+    #         )
 
-        execution_id = uuid.uuid4()
+    #         await run_classifiers(
+    #             pool, execution_id, gmail_resource, "me", classifiers
+    #         )
 
-        async with conn.cursor() as cursor:
-            await database.queries.executions.write_execution(cursor, execution_id)
-            await conn.commit()
-
-        try:
-            async with conn.cursor() as cursor:
-                classifiers = await database.queries.classifiers.read_all_classifiers(
-                    cursor
-                )
-
-                await run_classifiers(
-                    pool, execution_id, gmail_resource, "me", classifiers
-                )
-
-            execution_status = "SUCCESS"
-        except Exception as e:
-            logger.error(f"Error running main function: {e}")
-            execution_status = "ERROR"
-        finally:
-            async with conn.cursor() as cursor:
-                await database.queries.executions.write_execution_end_status_and_duration(
-                    cursor, execution_id, execution_status, pendulum.now()
-                )
-                await conn.commit()
+        execution_status = "SUCCESS"
+    except Exception as e:
+        logger.error(f"Error running main function: {e}")
+        execution_status = "ERROR"
+    finally:
+        await executions_service.finish_execution(pool, execution["execution_id"], execution_status)
+    #     async with conn.cursor() as cursor:
+    #         await database.queries.executions.write_execution_end_status_and_duration(
+    #             cursor, execution_id, execution_status, pendulum.now()
+    #         )
+    #         await conn.commit()
 
 
 if __name__ == "__main__":

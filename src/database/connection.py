@@ -45,33 +45,31 @@ async def connect_to_database(postgres_url: str):
     return pool
 
 
-async def init_database(conn: psycopg.AsyncConnection):
+async def init_database(pool: psycopg_pool.AsyncConnectionPool):
     """"Initializes the database by running the init scripts.
     
     Args:
-        conn (psycopg.AsyncConnection): Connection to the database.
-        
-    Returns:
-        psycopg.AsyncConnection: Connection to the database.
+        pool (psycopg_pool.AsyncConnectionPool): Connection to the database. 
     """
     
     init_scripts_dir = DIR_DATABASE_SCRIPTS / 'init'
 
-    for script_file in init_scripts_dir.iterdir():
-        if script_file.suffix != '.sql':
-            continue
-        
-        file_content = script_file.read_text()
-        
-        async with conn.cursor() as cursor:
-            try:
-                await cursor.execute(file_content)
-            except psycopg.Error as e:
-                logger.error(f"Error running script {script_file.name}: {e}")
-                await conn.rollback()
-                raise e
-        
-                
-    await conn.commit()
+    async with pool.connection() as conn:
+        for script_file in init_scripts_dir.iterdir():
+            if script_file.suffix != '.sql':
+                continue
+            
+            file_content = script_file.read_text()
+            
+            async with conn.cursor() as cursor:
+                try:
+                    await cursor.execute(file_content)
+                except psycopg.Error as e:
+                    logger.error(f"Error running script {script_file.name}: {e}")
+                    await conn.rollback()
+                    raise e
+            
+                    
+        await conn.commit()
     
     return conn
