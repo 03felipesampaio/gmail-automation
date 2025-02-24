@@ -42,6 +42,7 @@ import database.connection as connection
 # import database.queries.actions
 import psycopg
 
+import gmail_api.connection
 from service import executions_service, actions_service, classifiers_service
 
 from actions import defined_actions
@@ -330,7 +331,7 @@ def setup_logging():
 
 async def main():
     # Get the credentials from Gmail
-    gmail_resource = credentials.refresh_credentials(
+    gmail_resource = gmail_api.connection.refresh_credentials(
         os.environ.get("GMAIL_CREDENTIALS_PATH")
     )
 
@@ -338,7 +339,7 @@ async def main():
     await connection.init_database(pool)
     await actions_service.load_actions(pool, defined_actions)
     
-    execution = await executions_service.run_in_batch(pool)
+    execution = await executions_service.run_in_batch(pool, gmail_resource, userId="me")
 
 if __name__ == "__main__":
     # pendulum.set_local_timezone('UTC')
