@@ -3,16 +3,12 @@ from typing import Any, Callable
 from googleapiclient.discovery import Resource
 from google.cloud import pubsub_v1
 
-# TODO Move all this credentials logic to a separated file
-# from classfiers import USER_CLASSFIERS, GMAIL_SERVICE, CLOUD_STORAGE_CLIENT
-
 
 # Date and time libs
 import pendulum
 
 # Async lib
 import asyncio
-import uuid
 
 # Environment variables
 from dotenv import load_dotenv
@@ -23,9 +19,7 @@ import os
 from pathlib import Path
 import json
 import atexit
-import functools
 from pprint import pprint
-import psycopg_pool
 
 # import gmail
 # import pubsub
@@ -33,14 +27,6 @@ import gmail_api
 import credentials
 import database.connection as connection
 
-# import database.queries
-
-# import database.queries.executions
-# import database.queries.classifiers
-# import database.queries.classifier_executions
-# import database.queries.classifier_message_execution
-# import database.queries.classifier_actions
-# import database.queries.actions
 import psycopg
 
 import gmail_api.connection
