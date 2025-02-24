@@ -4,7 +4,7 @@ from pathlib import Path
 # Add the src directory to the sys.path
 sys.path.append(str(Path(__file__).resolve().parent))
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
 import asyncio
 from psycopg_pool import AsyncConnectionPool
@@ -87,10 +87,17 @@ async def run_all_classifiers_in_batch(userId:str = "me", pool: AsyncConnectionP
     return execution
 
 
+@app.get("/api/v1/classifiers", response_model=list[models.Classifier], tags=["Classifier"])
+async def read_all_classifiers(pool: AsyncConnectionPool = Depends(get_pool)):
+    """Get all classifiers."""
+    classifiers = await classifiers_service.get_classifiers(pool)
+    return classifiers
+    
+
 @app.post("/api/v1/classifiers", response_model=models.Classifier, tags=["Classifier"])
 async def create_classifier(classifier: models.ClassifierCreate, pool: AsyncConnectionPool = Depends(get_pool)):
     """Endpoint to create a new classifier."""
-    new_classifier = await classifiers_service.create_classifier(pool, classifier)
+    new_classifier = await classifiers_service.create_classifier(pool, classifier.classifier_name, classifier.gmail_query)
     return new_classifier
 
 
@@ -104,12 +111,15 @@ async def read_classifier(classifier_id: int, pool: AsyncConnectionPool = Depend
 @app.put("/api/v1/classifiers/{classifier_id}", response_model=models.Classifier, tags=["Classifier"])
 async def update_classifier(classifier_id: int, classifier: models.ClassifierUpdate, pool: AsyncConnectionPool = Depends(get_pool)):
     """Endpoint to update a classifier by ID."""
-    updated_classifier = await classifiers_service.update_classifier(pool, classifier_id, classifier)
+    updated_classifier = await classifiers_service.update_classifier(pool, classifier_id, classifier.classifier_name, classifier.gmail_query)
     return updated_classifier
 
 
 @app.delete("/api/v1/classifiers/{classifier_id}", response_model=models.Classifier, tags=["Classifier"])
 async def delete_classifier(classifier_id: int, pool: AsyncConnectionPool = Depends(get_pool)):
     """Endpoint to delete a classifier by ID."""
+    classifier = await classifiers_service.get_classifier_by_id(pool, classifier_id)
+    if classifier is None:
+        raise HTTPException(404, f"Failed to delete classifier with ID '{classifier_id}'. Classifier not found on database.")
     deleted_classifier = await classifiers_service.delete_classifier(pool, classifier_id)
     return deleted_classifier
