@@ -20,7 +20,6 @@ class ClassifierCreate(BaseModel):
 class ClassifierUpdate(BaseModel):
     classifier_name: Optional[str] = None
     gmail_query: Optional[str] = None
-    updated_at: Optional[datetime]
 
 
 class ClassifierDelete(BaseModel):
