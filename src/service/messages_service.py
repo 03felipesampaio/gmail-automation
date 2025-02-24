@@ -40,7 +40,7 @@ async def execute_messages_in_batch(
             logger.info(
                 f"Started message execution for message {message['id']} and classifier {classifier_execution['classifier_id']}"
             )
-            await message_handler(message)
+            message_handler(message)
             execution_status = "SUCCESS"
         except Exception as e:
             logger.error(

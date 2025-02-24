@@ -67,6 +67,6 @@ async def run_in_batch(
     execution_finished = await finish_execution(
         pool, execution["execution_id"], execution_status
     )
-    logger.info(f"Finished execution {execution['execution_id']}")
+    logger.info(f"Finished execution {execution['execution_id']} with status '{execution_status}'")
 
     return execution_finished

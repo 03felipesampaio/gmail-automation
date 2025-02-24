@@ -15,6 +15,20 @@ async def get_classifiers(pool: psycopg_pool.AsyncConnectionPool) -> list[dict]:
     return await classifiers_repository.read_all_classifiers(pool)
 
 
+def get_classifier_execution_status_from_messages_executions(
+    messages_executions: list[dict],
+) -> str:
+    """
+    Get the execution status from the messages executions
+    """
+    if all(execution["status"] == "SUCCESS" for execution in messages_executions):
+        return "SUCCESS"
+    elif any(execution["status"] == "SUCCESS" for execution in messages_executions):
+        return "PARTIAL SUCCESS"
+    else:
+        return "ERROR"
+
+
 async def run_classifier_in_batch(
     pool: psycopg_pool.AsyncConnectionPool,
     execution: dict,
@@ -44,7 +58,7 @@ async def run_classifier_in_batch(
         classifier_format = actions_service.get_message_format_for_classifier(
             [c["format"] for c in classifier_actions]
         )
-        
+
         # Query the messages from Gmail on the specified format
         # The query_messages function already returns the messages in minimal format
         # so we don't need to query the messages again if the format is minimal
@@ -54,17 +68,20 @@ async def run_classifier_in_batch(
             )
         else:
             messages = classifier_messages_ids
-        
+
         # Build the messages handler
-        classifier_handler = actions_service.build_message_handler(
-            classifier_actions
-        )
-        
+        classifier_handler = actions_service.build_message_handler(classifier_actions)
+
         # For each message, start a new message execution
-        await messages_service.execute_messages_in_batch(
+        messages_executions = await messages_service.execute_messages_in_batch(
             pool, classifier_execution, messages, classifier_handler
         )
-        classifier_execution_status = "SUCCESS"
+
+        classifier_execution_status = (
+            get_classifier_execution_status_from_messages_executions(
+                messages_executions
+            )
+        )
     except Exception as e:
         classifier_execution_status = "ERROR"
         logger.error(f"Error running classifier {classifier['classifier_id']}: {e}")
@@ -78,7 +95,7 @@ async def run_classifier_in_batch(
             )
         )
         logger.info(
-            f"Finished classifier execution {classifier_execution['classifier_execution_id']} for classifier {classifier['classifier_id']}"
+            f"Finished classifier execution {classifier_execution['classifier_execution_id']} for classifier {classifier['classifier_id']} with status '{classifier_execution_status}'"
         )
 
     return classifier_execution_finished
@@ -94,7 +111,11 @@ async def run_all_classifiers_in_batch(
     classifier_executions = []
     async with asyncio.TaskGroup() as tg:
         tasks = [
-            tg.create_task(run_classifier_in_batch(pool, execution, classifier, gmail_resource, userId))
+            tg.create_task(
+                run_classifier_in_batch(
+                    pool, execution, classifier, gmail_resource, userId
+                )
+            )
             for classifier in classifiers
         ]
 
