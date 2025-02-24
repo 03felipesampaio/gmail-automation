@@ -1,10 +1,11 @@
 import psycopg
+import psycopg_pool
 import logging
 import uuid
 
 logger = logging.getLogger("gmail_automation")
 
-async def get_classifier_actions(cursor: psycopg.AsyncCursor, classifier_id: int) -> list[dict]:
+async def get_classifier_actions(pool: psycopg_pool.AsyncConnectionPool, classifier_id: int) -> list[dict]:
     """Get classifier actions from the database."""
     query = """
     SELECT classifier_action_id, classifier_id, classifier_actions.action_name, classifier_actions.parameters, action_templates.format
@@ -13,6 +14,8 @@ async def get_classifier_actions(cursor: psycopg.AsyncCursor, classifier_id: int
     WHERE classifier_id = %s
     """
     
-    await cursor.execute(query, (classifier_id,))
-    classifier_actions = await cursor.fetchall()
+    async with pool.connection() as conn:
+        async with conn.cursor() as cursor:
+            await cursor.execute(query, (classifier_id,))
+            classifier_actions = await cursor.fetchall()
     return classifier_actions
