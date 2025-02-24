@@ -123,3 +123,32 @@ async def run_all_classifiers_in_batch(
         classifier_executions.append(await task)
 
     return classifier_executions
+
+
+async def get_classifier_by_id(
+    pool: psycopg_pool.AsyncConnectionPool, classifier_id: int
+) -> dict:
+    return await classifiers_repository.get_classifier_by_id(pool, classifier_id)
+
+
+async def create_classifier(
+    pool: psycopg_pool.AsyncConnectionPool, classifier_name: str, gmail_query: str
+) -> None:
+    await classifiers_repository.create_classifier(pool, classifier_name, gmail_query)
+
+
+async def update_classifier(
+    pool: psycopg_pool.AsyncConnectionPool,
+    classifier_id: int,
+    classifier_name: str,
+    gmail_query: str,
+) -> None:
+    await classifiers_repository.update_classifier(
+        pool, classifier_id, classifier_name, gmail_query
+    )
+
+
+async def delete_classifier(
+    pool: psycopg_pool.AsyncConnectionPool, classifier_id: int
+) -> None:
+    await classifiers_repository.delete_classifier(pool, classifier_id)

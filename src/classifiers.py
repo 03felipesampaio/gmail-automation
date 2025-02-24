@@ -1,4 +1,4 @@
-from gmail_api import GmailClassifier, GmailMessage
+from _gmail_api import GmailClassifier, GmailMessage
 from handlers.attachments import AttachmentHandler
 from handlers.messages import MessageHandler
 from credentials import refresh_credentials
