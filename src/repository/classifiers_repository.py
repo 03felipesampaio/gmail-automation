@@ -52,17 +52,21 @@ async def get_classifier_by_id(
 
 async def create_classifier(
     pool: psycopg_pool.AsyncConnectionPool, classifier_name: str, gmail_query: str
-) -> None:
+) -> dict:
     async with pool.connection() as conn:
         async with conn.cursor() as cursor:
             await cursor.execute(
                 """
                 INSERT INTO classifiers (classifier_name, gmail_query)
                 VALUES (%s, %s)
+                RETURNING *
                 """,
                 (classifier_name, gmail_query),
             )
+            classifier = await cursor.fetchone()
+            await conn.commit()
     logger.info(f"Classifier '{classifier_name}' created successfully")
+    return classifier
 
 
 async def update_classifier(
@@ -76,12 +80,16 @@ async def update_classifier(
             await cursor.execute(
                 """
                 UPDATE classifiers
-                SET classifier_name = %s, gmail_query = %s
-                WHERE id = %s
+                SET classifier_name = %s, gmail_query = %s, updated_at = NOW()
+                WHERE classifier_id = %s
+                RETURNING *
                 """,
                 (classifier_name, gmail_query, classifier_id),
             )
+            classifier = await cursor.fetchone()
+            await conn.commit()
     logger.info(f"Classifier with ID '{classifier_id}' updated successfully")
+    return classifier
 
 
 async def delete_classifier(
@@ -92,8 +100,12 @@ async def delete_classifier(
             await cursor.execute(
                 """
                 DELETE FROM classifiers
-                WHERE id = %s
+                WHERE classifier_id = %s
+                RETURNING *
                 """,
                 (classifier_id,),
             )
+            classifier = await cursor.fetchone()
+            await conn.commit()
     logger.info(f"Classifier with ID '{classifier_id}' deleted successfully")
+    return classifier

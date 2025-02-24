@@ -1,3 +1,4 @@
+import re
 import psycopg_pool
 import logging
 from googleapiclient.discovery import Resource
@@ -134,7 +135,8 @@ async def get_classifier_by_id(
 async def create_classifier(
     pool: psycopg_pool.AsyncConnectionPool, classifier_name: str, gmail_query: str
 ) -> None:
-    await classifiers_repository.create_classifier(pool, classifier_name, gmail_query)
+    classifier = await classifiers_repository.create_classifier(pool, classifier_name, gmail_query)
+    return classifier
 
 
 async def update_classifier(
@@ -142,13 +144,15 @@ async def update_classifier(
     classifier_id: int,
     classifier_name: str,
     gmail_query: str,
-) -> None:
-    await classifiers_repository.update_classifier(
+) -> dict:
+    classifier = await classifiers_repository.update_classifier(
         pool, classifier_id, classifier_name, gmail_query
     )
+    return classifier
 
 
 async def delete_classifier(
     pool: psycopg_pool.AsyncConnectionPool, classifier_id: int
-) -> None:
-    await classifiers_repository.delete_classifier(pool, classifier_id)
+) -> dict:
+    classifier = await classifiers_repository.delete_classifier(pool, classifier_id)
+    return classifier
