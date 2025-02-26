@@ -24,31 +24,32 @@ async def load_actions(pool: psycopg_pool.AsyncConnectionPool, actions: dict) ->
         inserted_parameters = await actions_repository.add_action_parameters(
             pool, action["action_name"], action["parameters"]
         )
-        
+
 
 def get_message_format_for_classifier(classifier_actions_formats: list[str]) -> str:
     """
     Get the minimal format required by the classifier actions to be executed.
-    
+
     Ex.:
     - If the classifier actions formats are ['metadata', 'full'], the actions can only be executed with 'full'.
     - If the classifier actions formats are ['minimal', 'metadata'], the actions can only be executed with 'metadata'.
     """
     format_order = {"minimal": 0, "metadata": 1, "full": 2}
-    return max(classifier_actions_formats, key=lambda fmt: format_order[fmt]) if classifier_actions_formats else "minimal"
+    return (
+        max(classifier_actions_formats, key=lambda fmt: format_order[fmt])
+        if classifier_actions_formats
+        else "minimal"
+    )
 
 
-async def get_classifier_actions(pool: psycopg_pool.AsyncConnectionPool, classifier_id: int) -> list[str]:
+async def get_classifier_actions(
+    pool: psycopg_pool.AsyncConnectionPool, classifier_id: int
+) -> list[str]:
     # query the database for the classifier actions
-    classifier_actions = await classifier_actions_repository.get_classifier_actions(pool, classifier_id)
+    classifier_actions = await classifier_actions_repository.get_classifier_actions(
+        pool, classifier_id
+    )
     return classifier_actions
-
-
-def get_action_parameter_from_parameter_dict(action_parameter: dict) -> tuple[str, Any]:
-    """
-    Get the action parameter from the given parameter dictionary.
-    """
-    return action_parameter["parameter_name"], action_parameter["parameter_default"]
 
 
 def build_message_handler(
@@ -77,13 +78,39 @@ def build_message_handler(
             raise KeyError(
                 f"There was not any action found with the name '{classifier_action['action_name']}' on action list."
             )
-        partial_functions.append(partial(action_function["action"], **classifier_action["parameters"]))
+        partial_functions.append(
+            partial(action_function["action"], **classifier_action["parameters"])
+        )
 
     def execute_actions(message: dict) -> None:
         for partial_function in partial_functions:
             partial_function(message=message)
 
     return execute_actions
+
+
+async def get_all_actions(pool: psycopg_pool.AsyncConnectionPool) -> list[dict]:
+    """Get all actions from the database."""
+    actions = await actions_repository.get_all_actions(pool)
+
+    for action in actions:
+        action_parameters = await actions_repository.get_action_parameters(
+            pool, action["action_name"]
+        )
+        action["parameters"] = action_parameters
+
+    return actions
+
+
+async def get_action_by_name(pool: psycopg_pool.AsyncConnectionPool, action_name: str) -> dict:
+    """Get an action by its name."""
+    action = await actions_repository.get_action_by_name(pool, action_name)
+    action_parameters = await actions_repository.get_action_parameters(
+        pool, action["action_name"]
+    )
+    action["parameters"] = action_parameters
+
+    return action
 
 
 async def assign_action_to_classifier(

@@ -4,10 +4,10 @@ import logging
 logger = logging.getLogger("gmail_automation")
 
 
-async def get_existing_parameters(
+async def get_action_parameters(
     pool: psycopg_pool.AsyncConnectionPool, action_name: str
 ) -> list[dict]:
-    """Get existing parameters for the action from the database."""
+    """Get action parameters for the action from the database."""
     async with pool.connection() as conn:
         async with conn.cursor() as cursor:
             query = """
@@ -57,7 +57,7 @@ async def add_action_parameters(
     """Add parameters to the action."""
     async with pool.connection() as conn:
         async with conn.cursor() as cursor:
-            existing_parameters = await get_existing_parameters(pool, action_name)
+            existing_parameters = await get_action_parameters(pool, action_name)
 
             returned_parameters = []
             for param in parameters:
@@ -98,6 +98,16 @@ async def add_action_parameters(
                 returned_parameters.append(inserted_param)
 
             return returned_parameters
+        
+
+async def get_all_actions(pool: psycopg_pool.AsyncConnectionPool) -> list[dict]:
+    """Get all actions from the database."""
+    async with pool.connection() as conn:
+        async with conn.cursor() as cursor:
+            query = "SELECT * FROM action_templates"
+            await cursor.execute(query)
+            actions = await cursor.fetchall()
+            return actions
 
 
 async def get_action_by_name(
