@@ -88,3 +88,11 @@ def get_messages_in_batch(
         batch_req.execute()
 
     return messages_loaded
+
+
+def get_user_labels(gmail_resource: Resource, userId: str) -> list[dict]:
+    """
+    Get user labels
+    """
+    labels = gmail_resource.users().labels().list(userId=userId).execute()
+    return labels["labels"]
