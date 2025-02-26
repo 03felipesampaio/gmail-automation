@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+
 # Add the src directory to the sys.path
 sys.path.append(str(Path(__file__).resolve().parent))
 
@@ -18,7 +19,7 @@ from googleapiclient.discovery import Resource
 
 # Local imports
 from database.connection import connect_to_database, init_database
-from gmail_api import connection
+from gmail_api import connection, gmail_requests
 from service import executions_service, actions_service, classifiers_service
 from actions import defined_actions
 from dto import models
@@ -89,6 +90,15 @@ async def run_all_classifiers_in_batch(
     """Endpoint to run all classifiers execution."""
     execution = await executions_service.run_in_batch(pool, gmail_resource, userId)
     return execution
+
+
+@app.get("/api/v1/{user_id}/labels", response_model=list[dict], tags=["User"])
+async def get_user_labels(
+    user_id: str, label_type: str|None = None, gmail_resource: Resource = Depends(get_gmail_resource)
+):
+    """Get user labels."""
+    labels = gmail_requests.get_user_labels(gmail_resource, user_id)
+    return labels
 
 
 @app.get(
