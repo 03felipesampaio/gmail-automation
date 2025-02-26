@@ -26,34 +26,35 @@ class ClassifierExecution(BaseModel):
     classifier_execution_id: UUID
     execution_id: UUID
     classifier_id: int
-    started_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime]
     finished_at: Optional[datetime] = None
     status: str = "RUNNING"
 
 
 class Execution(BaseModel):
     execution_id: UUID
-    started_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime]
     finished_at: Optional[datetime] = None
     status: str = "RUNNING"
 
 
-class ActionTemplate(BaseModel):
-    action_name: str
-    action_description: Optional[str] = None
-    format: str
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = None
-
-
-class ActionParameterTemplate(BaseModel):
-    action_name: str
+class ActionParameter(BaseModel):
+    # action_name: str
     parameter_name: str
     parameter_type: str
     parameter_is_nullable: bool
     parameter_default: str
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime]
     updated_at: Optional[datetime] = None
+
+
+class Action(BaseModel):
+    action_name: str
+    action_description: Optional[str] = None
+    format: str
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime] = None
+    parameters: list[ActionParameter]
 
 
 class ClassifierAction(BaseModel):
@@ -77,6 +78,6 @@ class ClassifierActionUpdate(BaseModel):
 class ClassifierMessageExecution(BaseModel):
     message_id: str
     classifier_execution_id: UUID
-    started_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime]
     finished_at: Optional[datetime] = None
     status: str = "RUNNING"
