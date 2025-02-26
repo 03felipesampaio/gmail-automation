@@ -163,6 +163,28 @@ async def delete_classifier(
 
 
 @app.get(
+    "/api/v1/actions", response_model=list[models.Action], tags=["Actions"]
+)
+async def read_all_actions(pool: AsyncConnectionPool = Depends(get_pool)):
+    """Get all actions."""
+    actions = await actions_service.get_all_actions(pool)
+    return actions
+
+
+@app.get(
+    "/api/v1/actions/{action_name}",
+    response_model=models.Action,
+    tags=["Actions"],
+)
+async def read_action_by_name(
+    action_name: str, pool: AsyncConnectionPool = Depends(get_pool)
+):
+    """Get an action by its name."""
+    action = await actions_service.get_action_by_name(pool, action_name)
+    return action
+
+
+@app.get(
     "/api/v1/classifier_actions",
     response_model=list[models.ClassifierAction],
     tags=["Classifier actions"],
