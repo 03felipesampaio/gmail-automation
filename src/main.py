@@ -163,6 +163,34 @@ async def delete_classifier(
 
 
 @app.get(
+    "/api/v1/classifiers/{classifier_id}/messages",
+    response_model=list[models.Message],
+    tags=["Classifier", "Messages"],
+)
+async def read_classifier_messages(
+    classifier_id: int,
+    format: str = "minimal",
+    gmail_user_id: str = "me",
+    pool: AsyncConnectionPool = Depends(get_pool),
+    gmail_resource: Resource = Depends(get_gmail_resource),
+):
+    """Endpoint to get messages from a classifier."""
+    classifier = await classifiers_service.get_classifier_by_id(pool, classifier_id)
+    if classifier is None:
+        raise HTTPException(
+            404,
+            f"Failed to get messages for classifier with ID '{classifier_id}'. Classifier not found on database.",
+        )
+
+    # TODO: Implement pagination
+
+    messages = await classifiers_service.get_classifier_messages(
+        gmail_resource, gmail_user_id, classifier, format
+    )
+    return messages
+
+
+@app.get(
     "/api/v1/actions", response_model=list[models.Action], tags=["Actions"]
 )
 async def read_all_actions(pool: AsyncConnectionPool = Depends(get_pool)):
