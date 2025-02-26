@@ -84,3 +84,33 @@ def build_message_handler(
             partial_function(message=message)
 
     return execute_actions
+
+
+async def assign_action_to_classifier(
+    pool: psycopg_pool.AsyncConnectionPool,
+    classifier_id: int,
+    action_name: str,
+    parameters: dict,
+) -> dict:
+    """Create a new classifier action in the database."""
+    return await classifier_actions_repository.assign_action_to_classifier(
+        pool, classifier_id, action_name, parameters
+    )
+
+
+async def update_classifier_action(
+    pool: psycopg_pool.AsyncConnectionPool, classifier_action_id: int, parameters: dict
+) -> dict:
+    """Update an existing classifier action in the database."""
+    return await classifier_actions_repository.update_classifier_action(
+        pool, classifier_action_id, parameters
+    )
+
+
+async def delete_classifier_action(
+    pool: psycopg_pool.AsyncConnectionPool, classifier_action_id: int
+) -> dict:
+    """Delete a classifier action from the database."""
+    return await classifier_actions_repository.delete_classifier_action(
+        pool, classifier_action_id
+    )
