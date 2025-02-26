@@ -60,7 +60,7 @@ def init_gmail_resource():
     gmail_resource = connection.refresh_credentials(
         os.environ.get("GMAIL_CREDENTIALS_PATH")
     )
-    
+
 
 def get_gmail_resource():
     return gmail_resource
@@ -72,7 +72,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     await init_db()
     init_gmail_resource()
-    
+
     await actions_service.load_actions(pool, defined_actions)
     yield
 
@@ -81,45 +81,171 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/api/v1/run_classifiers", response_model=models.Execution)
-async def run_all_classifiers_in_batch(userId:str = "me", pool: AsyncConnectionPool = Depends(get_pool), gmail_resource: Resource = Depends(get_gmail_resource)):
+async def run_all_classifiers_in_batch(
+    userId: str = "me",
+    pool: AsyncConnectionPool = Depends(get_pool),
+    gmail_resource: Resource = Depends(get_gmail_resource),
+):
     """Endpoint to run all classifiers execution."""
     execution = await executions_service.run_in_batch(pool, gmail_resource, userId)
     return execution
 
 
-@app.get("/api/v1/classifiers", response_model=list[models.Classifier], tags=["Classifier"])
+@app.get(
+    "/api/v1/classifiers", response_model=list[models.Classifier], tags=["Classifier"]
+)
 async def read_all_classifiers(pool: AsyncConnectionPool = Depends(get_pool)):
     """Get all classifiers."""
     classifiers = await classifiers_service.get_classifiers(pool)
     return classifiers
-    
+
 
 @app.post("/api/v1/classifiers", response_model=models.Classifier, tags=["Classifier"])
-async def create_classifier(classifier: models.ClassifierCreate, pool: AsyncConnectionPool = Depends(get_pool)):
+async def create_classifier(
+    classifier: models.ClassifierCreate, pool: AsyncConnectionPool = Depends(get_pool)
+):
     """Endpoint to create a new classifier."""
-    new_classifier = await classifiers_service.create_classifier(pool, classifier.classifier_name, classifier.gmail_query)
+    new_classifier = await classifiers_service.create_classifier(
+        pool, classifier.classifier_name, classifier.gmail_query
+    )
     return new_classifier
 
 
-@app.get("/api/v1/classifiers/{classifier_id}", response_model=models.Classifier, tags=["Classifier"])
-async def read_classifier(classifier_id: int, pool: AsyncConnectionPool = Depends(get_pool)):
+@app.get(
+    "/api/v1/classifiers/{classifier_id}",
+    response_model=models.Classifier,
+    tags=["Classifier"],
+)
+async def read_classifier(
+    classifier_id: int, pool: AsyncConnectionPool = Depends(get_pool)
+):
     """Endpoint to get a classifier by ID."""
     classifier = await classifiers_service.get_classifier_by_id(pool, classifier_id)
     return classifier
 
 
-@app.put("/api/v1/classifiers/{classifier_id}", response_model=models.Classifier, tags=["Classifier"])
-async def update_classifier(classifier_id: int, classifier: models.ClassifierUpdate, pool: AsyncConnectionPool = Depends(get_pool)):
+@app.put(
+    "/api/v1/classifiers/{classifier_id}",
+    response_model=models.Classifier,
+    tags=["Classifier"],
+)
+async def update_classifier(
+    classifier_id: int,
+    classifier: models.ClassifierUpdate,
+    pool: AsyncConnectionPool = Depends(get_pool),
+):
     """Endpoint to update a classifier by ID."""
-    updated_classifier = await classifiers_service.update_classifier(pool, classifier_id, classifier.classifier_name, classifier.gmail_query)
+    updated_classifier = await classifiers_service.update_classifier(
+        pool, classifier_id, classifier.classifier_name, classifier.gmail_query
+    )
     return updated_classifier
 
 
-@app.delete("/api/v1/classifiers/{classifier_id}", response_model=models.Classifier, tags=["Classifier"])
-async def delete_classifier(classifier_id: int, pool: AsyncConnectionPool = Depends(get_pool)):
+@app.delete(
+    "/api/v1/classifiers/{classifier_id}",
+    response_model=models.Classifier,
+    tags=["Classifier"],
+)
+async def delete_classifier(
+    classifier_id: int, pool: AsyncConnectionPool = Depends(get_pool)
+):
     """Endpoint to delete a classifier by ID."""
     classifier = await classifiers_service.get_classifier_by_id(pool, classifier_id)
     if classifier is None:
-        raise HTTPException(404, f"Failed to delete classifier with ID '{classifier_id}'. Classifier not found on database.")
-    deleted_classifier = await classifiers_service.delete_classifier(pool, classifier_id)
+        raise HTTPException(
+            404,
+            f"Failed to delete classifier with ID '{classifier_id}'. Classifier not found on database.",
+        )
+    deleted_classifier = await classifiers_service.delete_classifier(
+        pool, classifier_id
+    )
     return deleted_classifier
+
+
+@app.get(
+    "/api/v1/classifier_actions",
+    response_model=list[models.ClassifierAction],
+    tags=["Classifier actions"],
+)
+async def read_all_classifier_actions(
+    classifier_id: int, pool: AsyncConnectionPool = Depends(get_pool)
+):
+    """Get all classifier actions."""
+    classifier_actions = await actions_service.get_classifier_actions(
+        pool, classifier_id
+    )
+
+    if not classifier_actions:
+        raise HTTPException(
+            404,
+            f"Failed to get classifier actions for classifier ID '{classifier_id}'. Classifier not found on database.",
+        )
+
+    return classifier_actions
+
+
+@app.post(
+    "/api/v1/classifier_actions",
+    response_model=models.ClassifierAction,
+    tags=["Classifier actions"],
+)
+async def assign_classifier_action(
+    classifier_action: models.ClassifierActionCreate,
+    pool: AsyncConnectionPool = Depends(get_pool),
+):
+    """Endpoint to assign a new classifier action to a classifier."""
+    classifier = await classifiers_service.get_classifier_by_id(
+        pool, classifier_action.classifier_id
+    )
+    if classifier is None:
+        raise HTTPException(
+            404,
+            f"Failed to assign action to classifier with ID '{classifier_action.classifier_id}'. Classifier not found on database.",
+        )
+
+    # action = await actions_service.get_action_by_id(pool, action_id)
+    # if action is None:
+    #     raise HTTPException(
+    #         404,
+    #         f"Failed to assign action to classifier with ID '{classifier_action.classifier_id}'. Action not found on database.",
+    #     )
+
+    new_classifier_action = await actions_service.assign_action_to_classifier(
+        pool,
+        classifier_action.classifier_id,
+        classifier_action.action_name,
+        classifier_action.parameters
+    )
+    return new_classifier_action
+
+
+@app.put(
+    "/api/v1/classifier_actions/{classifier_action_id}",
+    response_model=models.ClassifierAction,
+    tags=["Classifier actions"],
+)
+async def update_classifier_action(
+    classifier_action_id: int,
+    classifier_action: models.ClassifierActionUpdate,
+    pool: AsyncConnectionPool = Depends(get_pool),
+):
+    """Endpoint to update a classifier action by ID."""
+    updated_classifier_action = await actions_service.update_classifier_action(
+        pool, classifier_action_id, classifier_action.parameters
+    )
+    return updated_classifier_action
+
+
+@app.delete(
+    "/api/v1/classifier_actions/{classifier_action_id}",
+    response_model=models.ClassifierAction,
+    tags=["Classifier actions"],
+)
+async def delete_classifier_action(
+    classifier_action_id: int, pool: AsyncConnectionPool = Depends(get_pool)
+):
+    """Endpoint to delete a classifier action by ID."""
+    deleted_classifier_action = await actions_service.delete_classifier_action(
+        pool, classifier_action_id
+    )
+    return deleted_classifier_action

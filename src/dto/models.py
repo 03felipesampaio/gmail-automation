@@ -22,10 +22,6 @@ class ClassifierUpdate(BaseModel):
     gmail_query: Optional[str] = None
 
 
-class ClassifierDelete(BaseModel):
-    classifier_id: int
-
-
 class ClassifierExecution(BaseModel):
     classifier_execution_id: UUID
     execution_id: UUID
@@ -61,10 +57,21 @@ class ActionParameterTemplate(BaseModel):
 
 
 class ClassifierAction(BaseModel):
-    classifier_action_id: Optional[int] = None
+    classifier_action_id: int
     classifier_id: int
     action_name: str
     parameters: dict
+
+
+class ClassifierActionCreate(BaseModel):
+    classifier_id: int
+    action_name: str
+    parameters: dict
+
+
+class ClassifierActionUpdate(BaseModel):
+    action_name: Optional[str] = None
+    parameters: Optional[dict] = None
 
 
 class ClassifierMessageExecution(BaseModel):
