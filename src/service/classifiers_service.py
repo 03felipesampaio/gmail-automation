@@ -135,7 +135,9 @@ async def get_classifier_by_id(
 async def create_classifier(
     pool: psycopg_pool.AsyncConnectionPool, classifier_name: str, gmail_query: str
 ) -> None:
-    classifier = await classifiers_repository.create_classifier(pool, classifier_name, gmail_query)
+    classifier = await classifiers_repository.create_classifier(
+        pool, classifier_name, gmail_query
+    )
     return classifier
 
 
@@ -156,3 +158,25 @@ async def delete_classifier(
 ) -> dict:
     classifier = await classifiers_repository.delete_classifier(pool, classifier_id)
     return classifier
+
+
+async def get_classifier_messages(
+    gmail_resource: Resource,
+    userId: str,
+    classifier: dict,
+    format: str,
+) -> list[dict]:
+    """Get ckassifier messages from Gmail.
+    """
+    classifier_messages_ids = gmail_requests.query_messages(
+            gmail_resource, userId, classifier["gmail_query"]
+        )
+    
+    if format != "minimal":
+            messages = gmail_requests.get_messages_in_batch(
+                gmail_resource, userId, classifier_messages_ids, format
+            )
+    else:
+        messages = classifier_messages_ids
+        
+    return messages

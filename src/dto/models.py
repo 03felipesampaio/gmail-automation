@@ -81,3 +81,36 @@ class ClassifierMessageExecution(BaseModel):
     started_at: Optional[datetime]
     finished_at: Optional[datetime] = None
     status: str = "RUNNING"
+
+
+
+class MessagePartBody(BaseModel):
+    attachmentId: Optional[str] = None
+    data: Optional[str] = None
+    size: Optional[int] = None
+
+
+class MessagePartHeader(BaseModel):
+    name: Optional[str] = None
+    value: Optional[str] = None
+
+
+class MessagePart(BaseModel):
+    body: Optional[MessagePartBody] = None
+    filename: Optional[str] = None
+    headers: Optional[list[MessagePartHeader]] = None
+    mimeType: Optional[str] = None
+    partId: Optional[str] = None
+    parts: Optional[list['MessagePart']] = None
+
+
+class Message(BaseModel):
+    historyId: Optional[str] = None
+    id: Optional[str] = None
+    internalDate: Optional[str] = None
+    labelIds: Optional[list[str]] = None
+    payload: Optional[MessagePart] = None
+    raw: Optional[str] = None
+    sizeEstimate: Optional[int] = None
+    snippet: Optional[str] = None
+    threadId: Optional[str] = None
